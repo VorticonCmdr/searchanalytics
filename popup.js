@@ -50,7 +50,7 @@ function handleAuthResult(access_token, url) {
   $('#searchanalyticsUrl').val(url);
   $('#searchanalyticsProperty').val(decodeURIComponent(property));  
   var endDate = $('#datetimepickerEndDate').data().date || moment().format("YYYY-MM-DD");
-  var startDate = $('#datetimepickerStartDate').data().date || mmoment().subtract(7, 'days').format("YYYY-MM-DD");
+  var startDate = $('#datetimepickerStartDate').data().date || moment().subtract(7, 'days').format("YYYY-MM-DD");
   var payload = {
     'startDate': startDate,
     'endDate': endDate,
