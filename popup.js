@@ -8,6 +8,7 @@ function requestComplete() {
   $('#queryResult').bootstrapTable({
     'method': 'load', 
     'data': resp['rows'],
+    'exportDataType': 'all',
     'columns': [
       {
         'field': 'keys',
@@ -46,11 +47,13 @@ function extractProperty(url) {
 
 function handleAuthResult(access_token, url) {
   var property = extractProperty(url);
-  var endDate = moment().format("YYYY-MM-DD");
-  var startDate = moment().subtract(7, 'days').format("YYYY-MM-DD");
+  $('#searchanalyticsUrl').val(url);
+  $('#searchanalyticsProperty').val(decodeURIComponent(property));  
+  var endDate = $('#datetimepickerEndDate').data().date || moment().format("YYYY-MM-DD");
+  var startDate = $('#datetimepickerStartDate').data().date || mmoment().subtract(7, 'days').format("YYYY-MM-DD");
   var payload = {
-    'startDate': '2015-08-01',
-    'endDate': '2015-08-07',
+    'startDate': startDate,
+    'endDate': endDate,
     'dimensions': ['query'],
     'dimensionFilterGroups': [{
       'filters': [{
@@ -75,12 +78,40 @@ function handleAuthResult(access_token, url) {
 
 chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse) {
+
     chrome.identity.getAuthToken({ 'interactive': true }, function(token) {
-      handleAuthResult(token, request.url);
-    });  
+      if (token !== undefined) {
+        handleAuthResult(token, request.url);
+      } else {
+        renderStatus('authentication failed - please try again');
+      }      
+    });
+
   }
 );
 
-document.addEventListener('DOMContentLoaded', function() {
+$( document ).ready(function() {
+
+  var endDate = moment().format("YYYY-MM-DD");
+  var startDate = moment().subtract(7, 'days').format("YYYY-MM-DD");
+  $('#datetimepickerStartDate').datetimepicker({
+    format: 'YYYY-MM-DD',
+    defaultDate: startDate
+  });
+  $('#datetimepickerEndDate').datetimepicker({
+    format: 'YYYY-MM-DD',
+    defaultDate: endDate
+  });
+  $( "#searchanalyticsReload" ).on( "click", function() {
+    chrome.identity.getAuthToken({ 'interactive': false }, function(token) {
+      if (token !== undefined) {
+        var customUrl = $('#searchanalyticsUrl').val();
+        $('#queryResult').bootstrapTable('destroy');        
+        handleAuthResult(token, customUrl);
+      } else {
+        renderStatus('authentication failed - please try again');
+      }      
+    });
+  });
 
 });
