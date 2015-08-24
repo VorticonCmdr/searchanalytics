@@ -1,5 +1,6 @@
 var settings = {
-  searchanalyticsDays: 7
+  searchanalyticsDays: 7,
+  searchanalyticsRowLimit: 100
 };
 
 function renderStatus(statusText) {
@@ -22,22 +23,32 @@ function requestComplete() {
       {
         'field': 'clicks',
         'title': 'clicks',
-        'sortable': true
+        'sortable': true,
+        'align': 'right'
       },
-            {
+      {
         'field': 'impressions',
         'title': 'impressions',
-        'sortable': true
+        'sortable': true,
+        'align': 'right'
       },
       {
         'field': 'ctr',
         'title': 'ctr',
-        'sortable': true
+        'sortable': true,
+        'align': 'right',
+        'formatter': function(value, row, index) {
+          return (Math.round(value*10000)/100).toFixed(2);
+        }
       },
       {
         'field': 'position',
         'title': 'position',
-        'sortable': true
+        'sortable': true,
+        'align': 'right',
+        'formatter': function(value, row, index) {
+          return (Math.round(value*100)/100).toFixed(2);
+        }
       }
     ]
   });
@@ -66,7 +77,7 @@ function handleAuthResult(access_token, url) {
           'expression': url
         }]
     }],
-    'rowLimit': 100
+    'rowLimit': settings['searchanalyticsRowLimit']
   };
   var xhr = new XMLHttpRequest();
   xhr.open('POST', 'https://content.googleapis.com/webmasters/v3/sites/'+property+'/searchAnalytics/query?alt=json', true);
@@ -96,8 +107,14 @@ chrome.runtime.onMessage.addListener(
 
 $( document ).ready(function() {
 
-  chrome.storage.sync.get('searchanalyticsDays', function(items) {
+  var keys = [
+    'searchanalyticsDays',
+    'searchanalyticsRowLimit'
+  ];
+  chrome.storage.sync.get(keys, function(items) {
     settings['searchanalyticsDays'] = items['searchanalyticsDays'] || 7;
+    settings['searchanalyticsRowLimit'] = items['searchanalyticsRowLimit'] || 100;
+    $('#searchanalyticsRowLimit').val(settings['searchanalyticsRowLimit']);
 
     var endDate = moment().format("YYYY-MM-DD");
     var startDate = moment().subtract(settings['searchanalyticsDays'], 'days').format("YYYY-MM-DD");

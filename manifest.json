@@ -3,7 +3,7 @@
   "name": "Search Analytics extension",
   "short_name": "Search Analytics",
   "description": "This extension shows the queries for the current page (if available). The data source is the Google Search Analytics API.",
-  "version": "0.5",
+  "version": "0.6",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApAJaB+kwDW5lSuEMZ5XRbuDLKo4Mt9pkOeCXFbBskGxv+hJyXjNOBgDUIbhIX833McJS0Gvxld0VZUt8FbF9fCUIxBX7IIqJqI3/MpWuy5PsM+9kxNywPFvxLe/jFQa+02siWfI+uZeyrmF29EThvbCD8Uw0+4we63a+oxQuN8l4nuM0Qno4W0JWHYL8sGUKrxr1EyTWt2iBaxJe0ZoGu4eGFytcv2cJm5mlrvIOnDod0Ry5VQJBpmI2c3JHvmnlxRQ01lM49R1DRaUmz/YcOlvbmdtuLokFtYIWpzxzru5QZ07vaIy8qAdmjM41EeW7d134G6o/NQ4HIspBOljJ8QIDAQAB",
   "browser_action": {
     "default_icon": "icon.png"
