@@ -10,6 +10,8 @@
     <script src="bootstrap-table.min.js"></script>
     <script src="bootstrap-table-export.min.js"></script>
     <script src="tableExport.js"></script>
+    <script src="FileSaver.min.js"></script>
+    <script src="jquery.base64.js"></script>
     <script src="moment.min.js"></script>
     <script src="bootstrap-datetimepicker.min.js"></script>
     <script src="popup.js"></script>
@@ -34,6 +36,7 @@
                 </span>
             </div>
         </div>
+        <span>-</span>
         <div class="form-group">
             <div class='input-group date' id='datetimepickerEndDate'>
                 <input type='text' class="form-control" />
@@ -42,9 +45,9 @@
                 </span>
             </div>
         </div>
-        <button id="searchanalyticsReload" class="btn btn-default" type="button">reload</button>         
+        <button id="searchanalyticsReload" class="btn btn-primary" type="button">reload</button>         
       </form>      
-      <table id="queryResult"></table>
+      <table id="queryResult" data-show-export="true"></table>
       <div id="status"></div>      
     </div>
   </body>

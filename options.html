@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Search Analytics Options</title>
+    <link rel="stylesheet" href="bootstrap.min.css" />
+    <link rel="stylesheet" href="options.css" />
+    <link rel="stylesheet" href="bootstrap-table.min.css" />
+    <link rel="stylesheet" href="bootstrap-datetimepicker.min.css" />
+    <script src="jquery.min.js"></script>
+    <script src="bootstrap.min.js"></script>
+    <script src="moment.min.js"></script>
+    <script src="bootstrap-datetimepicker.min.js"></script>
+    <script src="options.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="panel panel-default form-options">
+        <div class="alert alert-success alert-dismissible" role="alert" id="success">
+           <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+           <span id="successMessage"></span>
+        </div>        
+        <form class="">
+          <h2>Search Analytics Settings</h2>
+          <div class="form-group">
+            <label for="searchanalyticsDays">Set date range: </label>
+            <select id="searchanalyticsDays" class="form-control">
+              <option value="7">Last 7 days</option>
+              <option value="28">Last 28 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+          </div>
+          <button class="btn btn-lg btn-primary btn-block" type="Button" id="save">Save</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+

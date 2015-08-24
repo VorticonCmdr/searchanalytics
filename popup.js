@@ -1,3 +1,7 @@
+var settings = {
+  searchanalyticsDays: 7
+};
+
 function renderStatus(statusText) {
   document.getElementById('status').textContent = statusText;
 }
@@ -50,7 +54,7 @@ function handleAuthResult(access_token, url) {
   $('#searchanalyticsUrl').val(url);
   $('#searchanalyticsProperty').val(decodeURIComponent(property));  
   var endDate = $('#datetimepickerEndDate').data().date || moment().format("YYYY-MM-DD");
-  var startDate = $('#datetimepickerStartDate').data().date || moment().subtract(7, 'days').format("YYYY-MM-DD");
+  var startDate = $('#datetimepickerStartDate').data().date || moment().subtract(settings['searchanalyticsDays'], 'days').format("YYYY-MM-DD");
   var payload = {
     'startDate': startDate,
     'endDate': endDate,
@@ -92,25 +96,29 @@ chrome.runtime.onMessage.addListener(
 
 $( document ).ready(function() {
 
-  var endDate = moment().format("YYYY-MM-DD");
-  var startDate = moment().subtract(7, 'days').format("YYYY-MM-DD");
-  $('#datetimepickerStartDate').datetimepicker({
-    format: 'YYYY-MM-DD',
-    defaultDate: startDate
-  });
-  $('#datetimepickerEndDate').datetimepicker({
-    format: 'YYYY-MM-DD',
-    defaultDate: endDate
-  });
-  $( "#searchanalyticsReload" ).on( "click", function() {
-    chrome.identity.getAuthToken({ 'interactive': false }, function(token) {
-      if (token !== undefined) {
-        var customUrl = $('#searchanalyticsUrl').val();
-        $('#queryResult').bootstrapTable('destroy');        
-        handleAuthResult(token, customUrl);
-      } else {
-        renderStatus('authentication failed - please try again');
-      }      
+  chrome.storage.sync.get('searchanalyticsDays', function(items) {
+    settings['searchanalyticsDays'] = items['searchanalyticsDays'] || 7;
+
+    var endDate = moment().format("YYYY-MM-DD");
+    var startDate = moment().subtract(settings['searchanalyticsDays'], 'days').format("YYYY-MM-DD");
+    $('#datetimepickerStartDate').datetimepicker({
+      format: 'YYYY-MM-DD',
+      defaultDate: startDate
+    });
+    $('#datetimepickerEndDate').datetimepicker({
+      format: 'YYYY-MM-DD',
+      defaultDate: endDate
+    });
+    $( "#searchanalyticsReload" ).on( "click", function() {
+      chrome.identity.getAuthToken({ 'interactive': false }, function(token) {
+        if (token !== undefined) {
+          var customUrl = $('#searchanalyticsUrl').val();
+          $('#queryResult').bootstrapTable('destroy');        
+          handleAuthResult(token, customUrl);
+        } else {
+          renderStatus('authentication failed - please try again');
+        }      
+      });
     });
   });
 
