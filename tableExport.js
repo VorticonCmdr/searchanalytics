@@ -75,7 +75,9 @@ THE SOFTWARE.*/
 						console.log(tdData);
 					}
 					var base64data = "base64," + $.base64.encode(tdData);
-					window.open('data:application/'+defaults.type+';filename=exportData;' + base64data);
+					//window.open('data:application/'+defaults.type+';filename=exportData;' + base64data);
+					var fileContent = 'data:application/'+defaults.type+';filename=exportData;' + base64data;
+					save(fileContent, 'exportData.'+defaults.type);
 				}else if(defaults.type == 'sql'){
 				
 					// Header
@@ -119,8 +121,9 @@ THE SOFTWARE.*/
 					}
 					
 					var base64data = "base64," + $.base64.encode(tdData);
-					window.open('data:application/sql;filename=exportData;' + base64data);
-					
+					//window.open('data:application/sql;filename=exportData;' + base64data);
+					var fileContent = 'data:application/sql;filename=exportData;' + base64data;
+					save(fileContent, 'exportData.sql');
 				
 				}else if(defaults.type == 'json'){
 				
@@ -168,7 +171,9 @@ THE SOFTWARE.*/
 						console.log(JSON.stringify(jsonExportArray));
 					}
 					var base64data = "base64," + $.base64.encode(JSON.stringify(jsonExportArray));
-					window.open('data:application/json;filename=exportData;' + base64data);
+					//window.open('data:application/json;filename=exportData;' + base64data);
+					var fileContent = 'data:application/json;filename=exportData;' + base64data;
+					save(fileContent, 'exportData.json');
 				}else if(defaults.type == 'xml'){
 				
 					var xml = '<?xml version="1.0" encoding="utf-8"?>';
@@ -209,7 +214,9 @@ THE SOFTWARE.*/
 					}
 					
 					var base64data = "base64," + $.base64.encode(xml);
-					window.open('data:application/xml;filename=exportData;' + base64data);
+					//window.open('data:application/xml;filename=exportData;' + base64data);
+					var fileContent = 'data:application/xml;filename=exportData;' + base64data;
+					save(fileContent, 'exportData.xml');
 
 				}else if(defaults.type == 'excel' || defaults.type == 'doc'|| defaults.type == 'powerpoint'  ){
 					//console.log($(this).html());
@@ -276,14 +283,16 @@ THE SOFTWARE.*/
 					excelFile += "</html>";
 
 					var base64data = "base64," + $.base64.encode(excelFile);
-					window.open('data:application/vnd.ms-'+defaults.type+';filename=exportData.doc;' + base64data);
+					//window.open('data:application/vnd.ms-'+defaults.type+';filename=exportData.doc;' + base64data);
+					var fileContent = 'data:application/vnd.ms-'+defaults.type+';filename=exportData.doc;' + base64data;
+					save(fileContent, 'exportData.'+defaults.type)
 					
 				}else if(defaults.type == 'png'){
 					html2canvas($(el), {
 						onrendered: function(canvas) {										
 							var img = canvas.toDataURL("image/png");
-							window.open(img);
-							
+							//window.open(img);
+							save(fileContent, 'exportData.png')
 							
 						}
 					});		
@@ -335,7 +344,13 @@ THE SOFTWARE.*/
 	
 				}
 				
-				
+				function save(fileContent, fileName) {
+					var link = document.createElement('a');
+					link.download = fileName;
+					link.href = fileContent;
+					link.click();
+				}
+
 				function parseString(data){
 				
 					if(defaults.htmlContent == 'true'){

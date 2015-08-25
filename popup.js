@@ -94,11 +94,18 @@ function handleAuthResult(access_token, url) {
 chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse) {
 
+    renderStatus('opening authentication - please be patient');
     chrome.identity.getAuthToken({ 'interactive': true }, function(token) {
       if (token !== undefined) {
         handleAuthResult(token, request.url);
       } else {
-        renderStatus('authentication failed - please try again');
+        chrome.identity.getAuthToken({ 'interactive': false }, function(token) {
+          if (token !== undefined) {
+            handleAuthResult(token, request.url);
+          } else {
+            renderStatus('authentication failed - please try again');
+          }      
+        });
       }      
     });
 
