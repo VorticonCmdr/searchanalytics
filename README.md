@@ -5,9 +5,11 @@ Download here:
 https://chrome.google.com/webstore/detail/search-analytics-extensio/amobaldhodbblgmphdddddippgjgphga
 
 Used libraries:
-- Twitter Bootstrap: http://getbootstrap.com/
+- Bootstrap: http://getbootstrap.com/
 - jQuery: https://jquery.com/
 - Bootstrap Table: https://github.com/wenzhixin/bootstrap-table
+- Billboardjs: https://naver.github.io/billboard.js/
+- D3.js: https://d3js.org/
 
 zip -r searchanalytics.v1.0.0.zip ./searchanalytics/ \
   -x "*/.git/*" \
