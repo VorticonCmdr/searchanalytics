@@ -8,3 +8,7 @@ Used libraries:
 - Twitter Bootstrap: http://getbootstrap.com/
 - jQuery: https://jquery.com/
 - Bootstrap Table: https://github.com/wenzhixin/bootstrap-table
+
+zip -r searchanalytics.v1.0.0.zip ./searchanalytics/ \
+  -x "*/.git/*" \
+  -x "*/.DS_Store"

@@ -1,33 +1,24 @@
 {
-  "manifest_version": 2,
-  "name": "Search Analytics extension",
-  "short_name": "Search Analytics",
-  "description": "This extension shows the queries for the current page (if available). The data source is the Google Search Analytics API.",
-  "version": "0.7",
+  "manifest_version": 3,
+  "name": "Search Analytics alternative",
+  "short_name": "SAa",
+  "version": "1.0",
+  "description": "A Chrome extension to interact with the Google Search Console API.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApAJaB+kwDW5lSuEMZ5XRbuDLKo4Mt9pkOeCXFbBskGxv+hJyXjNOBgDUIbhIX833McJS0Gvxld0VZUt8FbF9fCUIxBX7IIqJqI3/MpWuy5PsM+9kxNywPFvxLe/jFQa+02siWfI+uZeyrmF29EThvbCD8Uw0+4we63a+oxQuN8l4nuM0Qno4W0JWHYL8sGUKrxr1EyTWt2iBaxJe0ZoGu4eGFytcv2cJm5mlrvIOnDod0Ry5VQJBpmI2c3JHvmnlxRQ01lM49R1DRaUmz/YcOlvbmdtuLokFtYIWpzxzru5QZ07vaIy8qAdmjM41EeW7d134G6o/NQ4HIspBOljJ8QIDAQAB",
-  "browser_action": {
-    "default_icon": "icon.png"
-  },
+  "permissions": ["identity"],
+  "host_permissions": ["https://www.googleapis.com/"],
   "background": {
-    "scripts": [
-      "background.js"
-    ]
+    "service_worker": "/js/background.js"
   },
-  "options_page": "options.html",
-  "permissions": [
-    "activeTab",
-    "identity",
-    "storage"
-  ],
-  "icons": { 
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
-  },  
+  "action": {
+    "default_title": "GSC alternative UI"
+  },
+  "icons": {
+    "180": "/icons/logo-180.png",
+    "192": "/icons/logo-192.png"
+  },
   "oauth2": {
     "client_id": "410928017212-ci45iriirpfipf8rugbd7qvc94t13qto.apps.googleusercontent.com",
-    "scopes": [
-      "https://www.googleapis.com/auth/webmasters.readonly"
-    ]
+    "scopes": ["https://www.googleapis.com/auth/webmasters.readonly"]
   }
 }

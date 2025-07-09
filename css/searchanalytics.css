@@ -1,0 +1,15 @@
+@import url("https://fonts.googleapis.com/css?family=Google+Sans");
+:root {
+    --bs-font-sans-serif:
+        "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif,
+        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+        "Noto Color Emoji";
+}
+body {
+    font-family: Roboto, RobotoDraft, Helvetica, Arial, sans-serif;
+    background-color: #ebeff7;
+}
+#type {
+    width: fit-content;
+}
