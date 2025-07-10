@@ -66,9 +66,19 @@
                         id="fetch"
                         class="btn btn-outline-secondary"
                         type="button"
-                        id="button-addon2"
                     >
-                        fetch data
+                        (re)load data
+                    </button>
+                </div>
+                <div class="input-group">
+                    <button
+                        type="button"
+                        id="pageFilter"
+                        class="btn btn-outline-secondary"
+                        data-bs-toggle="modal"
+                        data-bs-target="#pageFilterModal"
+                    >
+                        url filter
                     </button>
                 </div>
 
@@ -162,6 +172,59 @@
                         </div>
                     </div>
                     <table id="pagestable"></table>
+                </div>
+            </div>
+        </div>
+
+        <div
+            class="modal fade"
+            id="pageFilterModal"
+            data-bs-backdrop="static"
+            data-bs-keyboard="true"
+            tabindex="-1"
+            aria-labelledby="staticBackdropLabel"
+            aria-hidden="true"
+        >
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h1 class="modal-title fs-5" id="staticBackdropLabel">
+                            Page
+                        </h1>
+                        <button
+                            type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"
+                        ></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <select id="urlFilterMode" class="form-select">
+                                <option value="*">URLs containing</option>
+                                <option value="-">URLs not containing</option>
+                                <option value="=">Exact URL</option>
+                                <option value="!">Not exact URL</option>
+                                <option value="~">Custom (matches regex)</option>
+                                <option value="_">Custom (Doesn't match regex)</option>
+                            </select>
+                        </div>
+                        <div class="form-floating">
+                          <input type="search" class="form-control" id="floatingPageFilterInput" placeholder="https://www.example.com/">
+                          <label for="floatingPageFilterInput">https://www.example.com/</label>
+                        </div>
+                    <div class="modal-footer border border-0">
+                        <button
+                            type="button"
+                            class="btn btn-link btn-light link-underline link-underline-opacity-0 link-underline-opacity-0-hover"
+                            data-bs-dismiss="modal"
+                        >
+                            Cancel
+                        </button>
+                        <button id="applyPageFilter" type="button" class="btn btn-primary">
+                            Apply
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

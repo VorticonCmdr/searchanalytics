@@ -9,10 +9,12 @@ let settings = {
     token: null,
   },
   siteUrl: currentURL.searchParams.get("property") || null,
+  page: currentURL.searchParams.get("page") || null,
 };
 
 const authorizeButton = document.getElementById("authorize_button");
 const signoutButton = document.getElementById("signout_button");
+const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
 let tokenClient;
 let gapiInited = false;
@@ -128,6 +130,9 @@ async function listSites() {
 
 $("#fetch").on("click", function () {
   clearChart();
+  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+
   settings.siteUrl = $("#property").val().trim();
   if (!settings.siteUrl) {
     return;
@@ -153,6 +158,7 @@ async function getPages() {
     endDate: new Date(settings.to).toISOString().slice(0, 10),
     startRow: 0,
     dimensions: ["HOUR", "PAGE"],
+    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
   };
 
   try {
@@ -242,10 +248,11 @@ async function getTimeline() {
     startRow: 0,
     dimensions: ["HOUR"],
     searchType: settings.type,
-    rowLimit: 10000,
+    rowLimit: 1000,
     dataState: "HOURLY_ALL",
-    startDate: "2025-01-01",
-    endDate: "2025-12-31",
+    startDate: `${new Date(settings.from).getFullYear()}-01-01`,
+    endDate: `${new Date(settings.to).getFullYear()}-12-31`,
+    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
   };
 
   try {
@@ -733,10 +740,32 @@ async function checkAuth() {
   });
 }
 
+let dimensionsFilterOperators = {
+  "*": "contains",
+  "-": "notContains",
+  "=": "equals",
+  "!": "notEquals",
+  "~": "includingRegex",
+  _: "excludingRegex",
+};
+function assemblePageFilters() {
+  if (!settings.page) {
+    return [];
+  }
+  if (settings.page.length < 2) {
+    return [];
+  }
+  let operator = dimensionsFilterOperators[settings.page[0]];
+  let dimension = "page";
+  let expression = settings.page.slice(1);
+
+  return [{ dimension, operator, expression }];
+}
+
 async function init() {
   checkAuth();
 
-  $("#property").val(settings.siteUrl);
+  $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
 
   let yesterday = getYesterday();
@@ -781,6 +810,10 @@ async function init() {
   });
 
   $("#property").on("change", function () {
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll");
+    $hoursTable.bootstrapTable("removeAll");
+
     let selectedValue = $(this).val();
     if (!selectedValue) {
       console.log("No property selected");
@@ -790,6 +823,8 @@ async function init() {
       return;
     }
     settings.siteUrl = selectedValue;
+    $("#property").attr("placeholder", settings.siteUrl);
+    $("#property").val("");
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
@@ -831,6 +866,33 @@ async function init() {
       });
       getPages();
     }
+  });
+
+  if (settings.page) {
+    $("#urlFilterMode").val(dimensionsFilterOperators[settings.page[0]]);
+    $("#floatingPageFilterInput").val(settings.page.slice(1));
+  }
+
+  $("#applyPageFilter").on("click", function () {
+    let type = $("#urlFilterMode").val();
+    let page = $("#floatingPageFilterInput").val();
+
+    if (!page) {
+      settings.page = null;
+      removeFilter("page");
+    } else {
+      settings.page = `${type}${page}`;
+      addFilter("page", settings.page);
+    }
+
+    pageFilterModal.hide();
+
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+
+    getTimeline();
+    getPages();
   });
 }
 init();
