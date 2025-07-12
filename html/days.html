@@ -8,7 +8,7 @@
             content="width=device-width, initial-scale=1, user-scalable=0"
         />
 
-        <title>Search Analytics alternative</title>
+        <title>data by days – Search Analytics alternative</title>
 
         <link rel="stylesheet" href="/css/bootstrap.v5.3.min.css" />
         <link
@@ -45,9 +45,9 @@
                     </span>
                     <ul class="dropdown-menu">
                         <li>
-                            <a class="dropdown-item" href="#">data by hour</a>
+                            <a class="dropdown-item" href="/html/index.html">data by hour</a>
                         </li>
-                        <li><a class="dropdown-item" href="/html/days.html">data by day</a></li>
+                        <li><a class="dropdown-item" href="#">data by day</a></li>
                     </ul>
                 </div>
                 <div>
@@ -58,6 +58,12 @@
                         <option value="news">News (search)</option>
                         <option value="image">Image (search)</option>
                         <option value="video">Video (search)</option>
+                    </select>
+                </div>
+                <div>
+                    <select id="groupBy" class="form-select">
+                        <option value="month">by month</option>
+                        <option value="day">by day</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -134,21 +140,20 @@
 
         <div class="container bg-white py-4 my-4">
             <ul class="nav nav-tabs nav-justified">
-                <li class="nav-item">
-                    <span class="nav-link active text-primary">hours</span>
+                <li data-id="hours" class="nav-item">
+                    <span class="nav-link active text-primary">timeseries</span>
                 </li>
-                <li class="nav-item">
+                <li data-id="pages" class="nav-item">
                     <span class="nav-link text-secondary">pages</span>
+                </li>
+                <li data-id="events" class="nav-item">
+                    <span class="nav-link text-secondary">events</span>
                 </li>
             </ul>
             <div class="border-start border-end">
-                <div class="tab visible">
-                    <table id="hourstable"></table>
-                </div>
-
-                <div class="tab invisible d-none">
-                    <div id="pagestable-toolbar" class="row">
-                        <div class="col">
+                <div id="hoursTab" class="tab visible">
+                    <div id="hourstable-toolbar" class="row">
+                        <div class="col input-group">
                             <div class="input-group">
                                 <span
                                     class="input-group-text"
@@ -156,30 +161,86 @@
                                     >from</span
                                 >
                                 <input
-                                    type="datetime-local"
+                                    type="date"
                                     class="form-control"
                                     id="from"
-                                    step="3600"
                                 />
-                            </div>
-                        </div>
-                        <div class="col">
-                            <div class="input-group">
                                 <span
                                     class="input-group-text"
                                     id="to-description"
                                     >to</span
                                 >
                                 <input
-                                    type="datetime-local"
+                                    type="date"
                                     class="form-control"
                                     id="to"
-                                    step="3600"
                                 />
                             </div>
                         </div>
                     </div>
+                    <table id="hourstable"></table>
+                </div>
+
+                <div id="pagesTab" class="tab invisible d-none">
                     <table id="pagestable"></table>
+                </div>
+                <div id="eventsTab" class="tab invisible d-none">
+                    <div id="eventstable-toolbar" class="row">
+                        <div class="col input-group">
+                            <span
+                                class="input-group-text"
+                                id="event-date-description"
+                                >from</span
+                            >
+                            <input
+                                type="date"
+                                class="form-control"
+                                id="event-date-from"
+                            />
+                            <span
+                                class="input-group-text"
+                                id="event-date-description"
+                                >to</span
+                            >
+                            <input
+                                type="date"
+                                class="form-control"
+                                id="event-date-to"
+                            />
+                            <input
+                                type="search"
+                                class="form-control"
+                                placeholder="event title"
+                                aria-label="event title"
+                                id="event-title"
+                            />
+                            <input
+                                type="search"
+                                class="form-control"
+                                placeholder="event category"
+                                aria-label="event category"
+                                id="event-category"
+                                list="events-category-list"
+                            />
+                            <datalist id="events-category-list">
+                                <option value="update">update</option>
+                                <option value="deploy">deploy</option>
+                                <option value="issue">issue</option>
+                            </datalist>
+                            <select id="event-property" class="form-select">
+                                <option value="all">all properties</option>
+                                <option value="this">this property</option>
+                            </select>
+                            <button
+                                id="addEvent"
+                                class="btn btn-outline-primary"
+                                type="button"
+                            >
+                                add
+                            </button>
+                        </div>
+                    </div>
+                    <table id="eventstable"></table>
                 </div>
             </div>
         </div>
@@ -247,6 +308,6 @@
         <script src="/js/d3.v7.8.5.min.js" charset="utf-8"></script>
         <script src="/js/billboard.min.js"></script>
 
-        <script src="/js/gsc-hourly.js"></script>
+        <script src="/js/gsc-daily.js"></script>
     </body>
 </html>

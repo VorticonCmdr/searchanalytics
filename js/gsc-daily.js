@@ -3,13 +3,19 @@ let currentURL = new URL(document.location);
 let settings = {
   properties: [],
   type: currentURL.searchParams.get("type") || "discover",
-  from: currentURL.searchParams.get("from") || null,
-  to: currentURL.searchParams.get("to") || null,
+  from:
+    currentURL.searchParams.get("from") ||
+    new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 30)
+      .toISOString()
+      .slice(0, 10),
+  to:
+    currentURL.searchParams.get("to") || new Date().toISOString().slice(0, 10),
   auth: {
     token: null,
   },
   siteUrl: currentURL.searchParams.get("property") || null,
   page: currentURL.searchParams.get("page") || null,
+  groupBy: currentURL.searchParams.get("groupBy") || "month",
 };
 
 const authorizeButton = document.getElementById("authorize_button");
@@ -24,23 +30,8 @@ let chart;
 
 let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
+let $eventsTable = $("#eventstable");
 let $tabs = $(".tab");
-
-Date.prototype.getISOWeek = function () {
-  // Copy date so we don't modify the original
-  const date = new Date(
-    Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()),
-  );
-  // ISO week day (Monday=1, Sunday=7)
-  const dayNum = date.getUTCDay() || 7;
-  // Set to nearest Thursday: current date + 4 - current day number
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  // Year of the Thursday in question
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  // Calculate full weeks to nearest Thursday
-  const weekNo = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
-  return weekNo;
-};
 
 authorizeButton.onclick = function handleAuthClick() {
   chrome.identity.getAuthToken({ interactive: true }, (token) => {
@@ -53,7 +44,7 @@ authorizeButton.onclick = function handleAuthClick() {
     }
     $("#auth_dropdown")
       .removeClass("btn-outline-primary")
-      .removeClass("btn-danger")
+      .removeClass("btn-outline-danger")
       .addClass("btn-outline-success");
     settings.auth.token = token;
     listSites();
@@ -70,7 +61,7 @@ signoutButton.onclick = function handleSignoutClick() {
     $("#auth_dropdown")
       .removeClass("btn-outline-primary")
       .removeClass("btn-outline-success")
-      .addClass("btn-danger");
+      .addClass("btn-outline-danger");
   });
 };
 
@@ -167,13 +158,13 @@ async function getPages() {
 
   const requestBody = {
     aggregationType: "AUTO",
-    dataState: "HOURLY_ALL",
+    dataState: "FINAL",
     type: settings.type,
     rowLimit: 10000,
-    startDate: new Date(settings.from).toISOString().slice(0, 10),
-    endDate: new Date(settings.to).toISOString().slice(0, 10),
+    startDate: settings.from,
+    endDate: settings.to,
     startRow: 0,
-    dimensions: ["HOUR", "PAGE"],
+    dimensions: ["PAGE"],
     dimensionFilterGroups: [{ filters: assemblePageFilters() }],
   };
 
@@ -198,26 +189,16 @@ async function getPages() {
 
     const data = await response.json();
 
-    const pages = data.rows
-      .filter(
-        (d) =>
-          new Date(d?.keys?.[0]).getTime() >= settings.from &&
-          new Date(d?.keys?.[0]).getTime() <= settings.to,
-      )
-      .map((d) => {
-        return {
-          timestamp: new Date(d?.keys?.[0]).getTime(),
-          page: d?.keys?.[1],
-          clicks: d?.clicks,
-          impressions: d?.impressions,
-          ctr: d?.ctr,
-        };
-      });
+    const pages = data.rows.map((d) => {
+      return {
+        page: d?.keys?.[0],
+        clicks: d?.clicks,
+        impressions: d?.impressions,
+        ctr: d?.ctr,
+      };
+    });
 
-    let aggregatedPages = aggregateByUrl(pages);
-    $pagesTable
-      .bootstrapTable("load", aggregatedPages)
-      .bootstrapTable("hideLoading");
+    $pagesTable.bootstrapTable("load", pages).bootstrapTable("hideLoading");
   } catch (err) {
     console.error(`Error: ${err.message}`);
   }
@@ -262,12 +243,12 @@ async function getTimeline() {
   const requestBody = {
     aggregationType: "AUTO",
     startRow: 0,
-    dimensions: ["HOUR"],
+    dimensions: ["DATE"],
     searchType: settings.type,
-    rowLimit: 1000,
-    dataState: "HOURLY_ALL",
-    startDate: `${new Date(settings.from).getFullYear()}-01-01`,
-    endDate: `${new Date(settings.to).getFullYear()}-12-31`,
+    rowLimit: 10000,
+    dataState: "FINAL",
+    startDate: settings.from,
+    endDate: settings.to,
     dimensionFilterGroups: [{ filters: assemblePageFilters() }],
   };
 
@@ -304,81 +285,118 @@ async function getTimeline() {
 
     const data = await response.json();
 
-    const timeline = data.rows.map((d) => {
-      return {
-        timestamp: new Date(d?.keys?.[0]).getTime(),
-        clicks: d?.clicks,
-        impressions: d?.impressions,
-        ctr: d?.ctr,
-      };
-    });
-    $hoursTable.bootstrapTable("load", timeline).bootstrapTable("hideLoading");
+    const { timeline: monthlyTL, chartData: monthlyCD } = transformData(
+      data,
+      (groupBy = settings.groupBy),
+    );
 
-    let chartData = generateHourlyGraphData(data.rows);
-    drawChart(chartData);
+    $hoursTable.bootstrapTable("load", monthlyTL).bootstrapTable("hideLoading");
+
+    drawChart(monthlyCD);
   } catch (err) {
     console.error(`Error: ${err.message}`);
   }
 }
 
-function generateHourlyGraphData(source) {
-  const dataMapClicks = new Map();
-  const dataMapImpressions = new Map();
-  const dataMapCtr = new Map();
+/**
+ * Transform API response rows into daily or monthly aggregates.
+ *
+ * @param {object} data       - The parsed JSON from your fetch.
+ * @param {'day'|'month'} [groupBy='day'] - Whether to group by day or by month.
+ * @returns {{
+ *   timeline: Array<{
+ *     timestamp: string,  // "YYYY-MM-DD" for day, "YYYY-MM-01" for month
+ *     year: string,       // 4-digit year
+ *     month: string,      // 2-digit month
+ *     day?: string,       // 2-digit day (only for day granularity)
+ *     clicks: number,
+ *     impressions: number,
+ *     ctr: number
+ *   }>,
+ *   chartData: {
+ *     timeseries: number[],    // [ 'x', ms, … ]
+ *     clicks: number[],        // [ 'clicks', … ]
+ *     impressions: number[],   // [ 'impressions', … ]
+ *     ctr: number[]            // [ 'ctr', … ]
+ *   }
+ * }}
+ */
+function transformData(data, groupBy = "day") {
+  // Initialize containers
+  const chartData = {
+    timeseries: ["x"],
+    clicks: ["clicks"],
+    impressions: ["impressions"],
+    ctr: ["ctr"],
+  };
 
-  // Map each timestamp (in ms) to clicks
-  source.forEach((entry) => {
-    const timestamp = new Date(entry.keys[0]).getTime();
-    dataMapClicks.set(timestamp, entry.clicks);
-    dataMapImpressions.set(timestamp, entry.impressions);
-    dataMapCtr.set(timestamp, entry.ctr * 100);
-  });
+  let timeline = [];
 
-  // Get most recent timestamp
-  const mostRecentStr = source[source.length - 1].keys[0];
-  const mostRecent = new Date(mostRecentStr);
-  mostRecent.setDate(mostRecent.getDate() + 1);
-  mostRecent.setHours(0, 0, 0, 0);
+  if (groupBy === "day") {
+    timeline = data.rows.map((d) => {
+      const dt = new Date(d.keys[0]);
+      const yyyy = dt.toISOString().slice(0, 4);
+      const mm = dt.toISOString().slice(5, 7);
+      const dd = dt.toISOString().slice(8, 10);
+      chartData.timeseries.push(dt.getTime());
+      chartData.clicks.push(d.clicks);
+      chartData.impressions.push(d.impressions);
+      chartData.ctr.push(d.ctr);
+      return {
+        timestamp: `${yyyy}-${mm}-${dd}`,
+        year: yyyy,
+        month: mm,
+        day: dd,
+        clicks: d.clicks,
+        impressions: d.impressions,
+        ctr: d.ctr,
+      };
+    });
+  } else if (groupBy === "month") {
+    const monthMap = new Map();
+    data.rows.forEach((d) => {
+      const dt = new Date(d.keys[0]);
+      const yyyy = dt.getUTCFullYear().toString();
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+      const key = `${yyyy}-${mm}`;
+      if (!monthMap.has(key)) {
+        monthMap.set(key, { clicks: 0, impressions: 0 });
+      }
+      const agg = monthMap.get(key);
+      agg.clicks += d.clicks;
+      agg.impressions += d.impressions;
+    });
 
-  // Calculate start time: 7 days before, at 00:00
-  const start = new Date(mostRecent);
-  start.setDate(start.getDate() - 7);
-  start.setHours(0, 0, 0, 0);
+    // Sort months chronologically
+    const sortedKeys = Array.from(monthMap.keys()).sort(
+      (a, b) => new Date(a + "-01") - new Date(b + "-01"),
+    );
 
-  const timeseries = ["x"];
-  const clicksLast7Days = ["clicks last 7 days"];
-  const clicksPrev7Days = ["clicks before"];
-  const impressionsLast7Days = ["impressions last 7 days"];
-  const impressionsPrev7Days = ["impressions before"];
-  const ctrLast7Days = ["ctr last 7 days"];
-  const ctrPrev7Days = ["ctr before"];
+    // Build timeline & chartData
+    sortedKeys.forEach((key) => {
+      const [yyyy, mm] = key.split("-");
+      const { clicks, impressions } = monthMap.get(key);
+      const ctr = impressions > 0 ? clicks / impressions : 0;
+      const dtForMs = new Date(`${key}-01`);
+      chartData.timeseries.push(dtForMs.getTime());
+      chartData.clicks.push(clicks);
+      chartData.impressions.push(impressions);
+      chartData.ctr.push(ctr);
 
-  const MS_PER_HOUR = 60 * 60 * 1000;
-
-  for (let i = 0; i < 24 * 7; i++) {
-    const ts = start.getTime() + i * MS_PER_HOUR;
-    const tsPrev = ts - 7 * 24 * MS_PER_HOUR;
-
-    timeseries.push(ts);
-    clicksLast7Days.push(dataMapClicks.get(ts) ?? null);
-    clicksPrev7Days.push(dataMapClicks.get(tsPrev) ?? null);
-
-    impressionsLast7Days.push(dataMapImpressions.get(ts) ?? null);
-    impressionsPrev7Days.push(dataMapImpressions.get(tsPrev) ?? null);
-
-    ctrLast7Days.push(dataMapCtr.get(ts) ?? null);
-    ctrPrev7Days.push(dataMapCtr.get(tsPrev) ?? null);
+      timeline.push({
+        timestamp: `${key}-01`,
+        year: yyyy,
+        month: mm,
+        clicks,
+        impressions,
+        ctr,
+      });
+    });
+  } else {
+    throw new Error(`Unknown groupBy value: ${groupBy}`);
   }
 
-  return {
-    timeseries,
-    clicksLast7Days,
-    clicksPrev7Days,
-    impressionsLast7Days,
-    impressionsPrev7Days,
-    ctrLast7Days,
-    ctrPrev7Days,
-  };
+  return { timeline, chartData };
 }
 
 function clearChart() {
@@ -394,41 +412,23 @@ function clearChart() {
 function drawChart(chartData) {
   let columns = [];
   let colors = {
-    "clicks last 7 days": "#4285f4",
-    "clicks before": "#4285f4",
-    "impressions last 7 days": "#5e35b1",
-    "impressions before": "#5e35b1",
-    "ctr last 7 days": "#00897b",
-    "ctr before": "#00897b",
+    clicks: "#4285f4",
+    impressions: "#5e35b1",
+    ctr: "#00897b",
   };
 
   columns.push(chartData.timeseries);
-  columns.push(chartData.clicksLast7Days);
-  columns.push(chartData.clicksPrev7Days);
-  columns.push(chartData.impressionsLast7Days);
-  columns.push(chartData.impressionsPrev7Days);
-  columns.push(chartData.ctrLast7Days);
-  columns.push(chartData.ctrPrev7Days);
+  columns.push(chartData.clicks);
+  columns.push(chartData.impressions);
 
   clearChart();
   chart = bb.generate({
     point: {
       show: false,
     },
-    line: {
-      classes: [
-        "line-class-clicks-before",
-        "line-class-clicks-last-7-days",
-        "line-class-impressions-before",
-        "line-class-impressions-last-7-days",
-        "line-class-ctr-before",
-        "line-class-ctr-last-7-days",
-      ],
-    },
-    bindto: "#chart",
     padding: {
-      left: 46,
-      right: 46,
+      left: 70,
+      right: 70,
     },
     data: {
       x: "x",
@@ -437,15 +437,10 @@ function drawChart(chartData) {
       order: "desc",
       type: "line",
       axes: {
-        "ctr last 7 days": "y2",
-        "ctr before": "y2",
+        clicks: "y",
+        impressions: "y2",
       },
-      hide: [
-        "impressions last 7 days",
-        "impressions before",
-        "ctr last 7 days",
-        "ctr before",
-      ],
+      hide: ["impressions", "ctr"],
     },
     tooltip: {
       format: {
@@ -453,13 +448,16 @@ function drawChart(chartData) {
           return parseFloat(value).toLocaleString();
         },
         title: function (x) {
-          return new Date(x).toLocaleString();
+          if (settings.groupBy == "day") {
+            return new Date(x).toISOString().slice(0, 10);
+          }
+          return new Date(x).toISOString().slice(0, 7);
         },
       },
     },
     axis: {
       y: {
-        label: "clicks / impressions",
+        label: "clicks",
         padding: {
           top: 0,
           bottom: 0,
@@ -474,7 +472,7 @@ function drawChart(chartData) {
         },
       },
       y2: {
-        label: "ctr",
+        label: "impressions",
         padding: {
           top: 0,
           bottom: 0,
@@ -489,7 +487,7 @@ function drawChart(chartData) {
         },
       },
       x: {
-        label: "by hour",
+        label: settings.groupBy == "day" ? "by day" : "by month",
         padding: {
           left: 0,
           right: 0,
@@ -497,23 +495,12 @@ function drawChart(chartData) {
         type: "timeseries",
         tick: {
           fit: false,
-          count: 8,
-          format: "%Y-%m-%d",
+          format: settings.groupBy == "day" ? "%Y-%m-%d" : "%Y-%m",
         },
       },
     },
   });
-
-  chart.regions.add({
-    axis: "x",
-    start: settings.from,
-    end: settings.to,
-    class: "regionCut",
-    label: {
-      text: "pages",
-      x: 5,
-    },
-  });
+  getEvents();
 }
 
 async function setClipboard(text) {
@@ -598,13 +585,75 @@ function tableButtons() {
   };
 }
 
+function eventsTableButtons() {
+  return {
+    btnGSheetClipboard: {
+      text: "sheets clipboard",
+      icon: "bi-file-spreadsheet",
+      event: function () {
+        let text = getGSheetClipboard(this);
+        setClipboard(text);
+      },
+      attributes: {
+        title: "copy selected rows for google sheets",
+      },
+    },
+    btnRemove: {
+      text: "remove events",
+      icon: "bi-trash",
+      event: function () {
+        let rows = $eventsTable.bootstrapTable("getSelections");
+        let ids = rows.map((row) => row.id);
+        $eventsTable.bootstrapTable("remove", {
+          field: "id",
+          values: ids,
+        });
+
+        chart.xgrids.remove();
+        chart.regions.remove();
+
+        setTimeout(function () {
+          chart.flush();
+        }, 1000);
+        saveEvents();
+      },
+      attributes: {
+        title: "delete selected events",
+      },
+    },
+  };
+}
+
 let hoursColumns = [
   {
     field: "timestamp",
     title: "timestamp",
-    formatter: dateFormat,
+    sortable: true,
+    visible: false,
+    searchable: false,
+    align: "right",
+  },
+  {
+    field: "year",
+    title: "year",
     sortable: true,
     visible: true,
+    searchable: false,
+    align: "right",
+  },
+  {
+    field: "month",
+    title: "month",
+    sortable: true,
+    visible: true,
+    searchable: false,
+    align: "right",
+  },
+  {
+    field: "day",
+    title: "day",
+    sortable: true,
+    visible: settings.groupBy == "day",
     searchable: false,
     align: "right",
   },
@@ -671,6 +720,53 @@ let pagesColumns = [
   },
 ];
 
+let eventsColumns = [
+  {
+    field: "state",
+    checkbox: true,
+  },
+  {
+    field: "from",
+    title: "from",
+    sortable: true,
+    visible: true,
+    searchable: true,
+    align: "left",
+  },
+  {
+    field: "to",
+    title: "to",
+    sortable: true,
+    visible: true,
+    searchable: true,
+    align: "left",
+  },
+  {
+    field: "title",
+    title: "title",
+    sortable: false,
+    visible: true,
+    searchable: true,
+    align: "left",
+  },
+  {
+    field: "category",
+    title: "category",
+    sortable: false,
+    visible: true,
+    searchable: true,
+    align: "left",
+  },
+  {
+    field: "property",
+    title: "property",
+    sortable: false,
+    visible: true,
+    searchable: true,
+    align: "left",
+  },
+];
+
 let dtf = new Intl.DateTimeFormat("default", {
   year: "2-digit",
   month: "2-digit",
@@ -711,6 +807,72 @@ function sanitizeFilename(input) {
 
 function generateFilename(name) {
   return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
+}
+
+async function generateEventsTable() {
+  $eventsTable.bootstrapTable({
+    toolbar: "#eventstable-toolbar",
+    multipleSelectRow: true,
+    clickToSelect: true,
+    classes: "table table-hover",
+    data: [],
+    pageList: [10, 100, "all"],
+    pageSize: 100,
+    pagination: true,
+    showRefresh: false,
+    buttons: eventsTableButtons,
+    search: true,
+    columns: eventsColumns,
+    showColumns: true,
+    exportTypes: ["csv"],
+    showExport: true,
+    exportOptions: {
+      fileName: function () {
+        return generateFilename("events");
+      },
+    },
+    onCheckSome: checkSomeEvents,
+    onCheck: checkEvent,
+    onCheckAll: checkAllEvents,
+    onUncheckSome: unCheckSomeEvents,
+    onUncheck: unCheckEvent,
+    onUncheckAll: unCheckAllEvents,
+    sortOrder: "desc",
+    sortName: "from",
+  });
+}
+function unCheckEvent(row, $element) {
+  unCheckSomeEvents([row]);
+}
+function unCheckSomeEvents(rows) {
+  processEvents(rows, false);
+}
+function unCheckAllEvents(rowsAfter, rowsBefore) {
+  processEvents(rowsBefore, false);
+}
+function checkEvent(row, $element) {
+  checkSomeEvents([row]);
+}
+function checkSomeEvents(rows) {
+  processEvents(rows, true);
+}
+function checkAllEvents(rowsAfter, rowsBefore) {
+  processEvents(rowsAfter, true);
+}
+function processEvents(rows, checked) {
+  let gridColor = checked ? "#e20074" : "#aaaaaa";
+  rows.forEach((row) => {
+    let index;
+    if (!row.to || row.from == row.to) {
+      index = chart.xgrids().findIndex((item) => item.id === row.id);
+      $($(".bb-xgrid-line line")[index]).css("stroke", gridColor);
+      $($(".bb-xgrid-line text")[index]).css("fill", gridColor);
+    } else {
+      index = chart.regions().findIndex((item) => item.id === row.id);
+      $($(".bb-region")[index]).css("fill", gridColor);
+      $($(".bb-region text")[index]).css("fill", gridColor);
+    }
+  });
 }
 
 async function generatePagesTable() {
@@ -808,7 +970,7 @@ async function checkAuth() {
     }
     $("#auth_dropdown")
       .removeClass("btn-outline-primary")
-      .removeClass("btn-danger")
+      .removeClass("btn-outline-danger")
       .addClass("btn-outline-success");
     settings.auth.token = token;
     listSites();
@@ -841,30 +1003,108 @@ function assemblePageFilters() {
   return [{ dimension, operator, expression }];
 }
 
+async function saveEvents() {
+  let rows = $eventsTable.bootstrapTable("getData", {
+    includeHiddenRows: true,
+    unfiltered: true,
+    formatted: false,
+  });
+  let data = Array.isArray(rows) ? rows : [rows];
+  chrome.storage.local.set({ events: data }, () => {
+    console.info("events saved");
+  });
+  addEvents(data);
+}
+
+async function getEvents() {
+  chrome.storage.local.get(["events"], (result) => {
+    if (!result.events) {
+      console.error("no events found");
+      return;
+    }
+    $eventsTable.bootstrapTable("load", result.events);
+    addEvents(result.events);
+  });
+}
+
+function addEvents(rows) {
+  if (!chart) {
+    return;
+  }
+  rows
+    .filter((row) => row.property == "all" || row.property == settings.siteUrl)
+    .forEach((row) => {
+      if (!row.to || row.from == row.to) {
+        chart.xgrids.add({ value: row.from, text: row.title, id: row.id });
+      } else {
+        chart.regions.add({
+          axis: "x",
+          start: row.from,
+          end: row.to,
+          class: "regionCut",
+          id: row.id,
+          label: {
+            text: row.title,
+            x: 0,
+            y: 4,
+            rotated: true,
+          },
+        });
+      }
+    });
+}
+
 async function init() {
   checkAuth();
 
   $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
+  $("#groupBy").val(settings.groupBy);
 
-  let yesterday = getYesterday();
-  if (!settings.from) {
-    settings.from = yesterday.from;
-  }
-  if (!settings.to) {
-    settings.to = yesterday.to;
-  }
-  $("#from").val(getLocalISOStringSlice(settings.from));
-  $("#to").val(getLocalISOStringSlice(settings.to));
+  $("#from").val(settings.from);
+  $("#to").val(settings.to);
+  $("#from").on("blur", function () {
+    let from = $(this).val();
+    if (settings.from == from) {
+      return;
+    }
+    settings.from = from;
+    addFilter("from", settings.from);
+
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+
+    getTimeline();
+    getPages();
+  });
+
+  $("#to").on("blur", function () {
+    let to = $(this).val();
+    if (settings.to == to) {
+      return;
+    }
+    settings.to = to;
+    addFilter("to", settings.to);
+
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+
+    getTimeline();
+    getPages();
+  });
 
   generateHoursTable();
   generatePagesTable();
+  generateEventsTable();
 
   $(".nav-tabs").on("click", ".nav-item", function (e) {
     e.preventDefault(); // Prevent the default link behavior
 
-    $tabs.toggleClass(["invisible", "visible"]);
-    $tabs.toggleClass("d-none");
+    let id = $(this).data("id");
+    $tabs.removeClass("visible").addClass("invisible d-none");
+    $(`#${id}Tab`).removeClass("invisible d-none").addClass("visible");
 
     // Remove 'active' from all nav links in the same nav-tabs container
     $(this)
@@ -886,6 +1126,21 @@ async function init() {
     addFilter("type", type);
     getTimeline();
     getPages();
+  });
+  $("#groupBy").on("change", function () {
+    clearChart();
+    $hoursTable.bootstrapTable("removeAll");
+
+    let groupBy = $(this).val();
+    settings.groupBy = groupBy;
+    addFilter("groupBy", groupBy);
+    getTimeline();
+
+    if (settings.groupBy == "day") {
+      $hoursTable.bootstrapTable("showColumn", "day");
+    } else {
+      $hoursTable.bootstrapTable("hideColumn", "day");
+    }
   });
 
   $("#property").on("change", function () {
@@ -933,16 +1188,6 @@ async function init() {
 
     $pagesTable.bootstrapTable("removeAll");
     if (chart && settings.from < settings.to) {
-      chart.regions.add({
-        axis: "x",
-        start: settings.from,
-        end: settings.to,
-        class: "regionCut",
-        label: {
-          text: "pages",
-          x: 5,
-        },
-      });
       getPages();
     }
   });
@@ -972,6 +1217,36 @@ async function init() {
 
     getTimeline();
     getPages();
+  });
+
+  getEvents();
+
+  $("#addEvent").on("click", function () {
+    let eventDateFrom = $("#event-date-from").val();
+    if (!eventDateFrom) {
+      console.error("no event start set");
+      return;
+    }
+    let eventId = crypto.randomUUID();
+    let eventDateTo = $("#event-date-to").val();
+    let eventTitle = $("#event-title").val()?.trim();
+    let eventCategory = $("#event-category").val()?.trim();
+    let eventPropertySelection = $("#event-property").val()?.trim();
+    let eventProperty =
+      eventPropertySelection == "this"
+        ? settings.siteUrl
+        : eventPropertySelection;
+    $eventsTable.bootstrapTable("append", [
+      {
+        id: eventId,
+        from: eventDateFrom,
+        to: eventDateTo,
+        title: eventTitle,
+        category: eventCategory,
+        property: eventProperty,
+      },
+    ]);
+    saveEvents();
   });
 }
 init();

@@ -13,3 +13,18 @@ body {
 #type {
     width: fit-content;
 }
+#groupBy {
+    width: fit-content;
+}
+.line-class-clicks-last-7-days {
+    stroke-dasharray: 3 4;
+    stroke-width: 3px;
+}
+.line-class-impressions-last-7-days {
+    stroke-dasharray: 3 4;
+    stroke-width: 3px;
+}
+.line-class-ctr-last-7-days {
+    stroke-dasharray: 3 4;
+    stroke-width: 3px;
+}
