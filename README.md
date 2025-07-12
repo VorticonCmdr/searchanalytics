@@ -11,6 +11,6 @@ Used libraries:
 - Billboardjs: https://naver.github.io/billboard.js/
 - D3.js: https://d3js.org/
 
-zip -r searchanalytics.v1.0.0.zip ./searchanalytics/ \
+zip -r searchanalytics.v1.1.0.zip ./searchanalytics/ \
   -x "*/.git/*" \
   -x "*/.DS_Store"
