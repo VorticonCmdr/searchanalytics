@@ -149,12 +149,12 @@ $("#fetch").on("click", function () {
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
   $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
 
-  settings.siteUrl = $("#property").val().trim();
   if (!settings.siteUrl) {
     return;
   }
   getTimeline();
   getPages();
+  listSites();
 });
 
 async function getPages() {
@@ -304,24 +304,38 @@ async function getTimeline() {
 
     const data = await response.json();
 
+    let firstIncompleteHour = data?.metadata?.firstIncompleteHour;
+    let firstIncompleteHourTs = Infinity;
+    if (firstIncompleteHour) {
+      firstIncompleteHourTs = new Date(firstIncompleteHour).getTime();
+    }
+
     const timeline = data.rows.map((d) => {
+      let ts = new Date(d?.keys?.[0]).getTime();
       return {
-        timestamp: new Date(d?.keys?.[0]).getTime(),
+        timestamp: ts,
         clicks: d?.clicks,
         impressions: d?.impressions,
         ctr: d?.ctr,
+        incomplete: ts >= firstIncompleteHourTs,
       };
     });
     $hoursTable.bootstrapTable("load", timeline).bootstrapTable("hideLoading");
 
-    let chartData = generateHourlyGraphData(data.rows);
+    let chartData = generateHourlyGraphData(data);
     drawChart(chartData);
   } catch (err) {
     console.error(`Error: ${err.message}`);
   }
 }
 
-function generateHourlyGraphData(source) {
+function generateHourlyGraphData(data) {
+  let source = data.rows;
+  let firstIncompleteHour = Infinity;
+  if (data?.metadata?.firstIncompleteHour) {
+    firstIncompleteHour = new Date(data.metadata.firstIncompleteHour).getTime();
+  }
+
   const dataMapClicks = new Map();
   const dataMapImpressions = new Map();
   const dataMapCtr = new Map();
@@ -333,6 +347,16 @@ function generateHourlyGraphData(source) {
     dataMapImpressions.set(timestamp, entry.impressions);
     dataMapCtr.set(timestamp, entry.ctr * 100);
   });
+
+  const dataMapClicksMax = dataMapClicks.size
+    ? Math.max(...dataMapClicks.values())
+    : undefined;
+  const dataMapImpressionsMax = dataMapImpressions.size
+    ? Math.max(...dataMapImpressions.values())
+    : undefined;
+  const dataMapCtrMax = dataMapCtr.size
+    ? Math.max(...dataMapCtr.values())
+    : undefined;
 
   // Get most recent timestamp
   const mostRecentStr = source[source.length - 1].keys[0];
@@ -347,10 +371,13 @@ function generateHourlyGraphData(source) {
 
   const timeseries = ["x"];
   const clicksLast7Days = ["clicks last 7 days"];
+  const clicksIncomplete = ["incomplete clicks"];
   const clicksPrev7Days = ["clicks before"];
   const impressionsLast7Days = ["impressions last 7 days"];
+  const impressionsIncomplete = ["incomplete impressions"];
   const impressionsPrev7Days = ["impressions before"];
   const ctrLast7Days = ["ctr last 7 days"];
+  const ctrIncomplete = ["incomplete ctr"];
   const ctrPrev7Days = ["ctr before"];
 
   const MS_PER_HOUR = 60 * 60 * 1000;
@@ -359,25 +386,54 @@ function generateHourlyGraphData(source) {
     const ts = start.getTime() + i * MS_PER_HOUR;
     const tsPrev = ts - 7 * 24 * MS_PER_HOUR;
 
+    let ctr = (dataMapCtr.get(ts) / dataMapCtrMax) * dataMapImpressionsMax;
+    let ctrPrev =
+      (dataMapCtr.get(tsPrev) / dataMapCtrMax) * dataMapImpressionsMax;
+
     timeseries.push(ts);
-    clicksLast7Days.push(dataMapClicks.get(ts) ?? null);
+    if (ts >= firstIncompleteHour) {
+      clicksIncomplete.push(dataMapClicks.get(ts) ?? null);
+      impressionsIncomplete.push(dataMapImpressions.get(ts) ?? null);
+      ctrIncomplete.push(ctr ?? null);
+
+      clicksLast7Days.push(null);
+      impressionsLast7Days.push(null);
+      ctrLast7Days.push(null);
+    } else {
+      if (ts >= firstIncompleteHour - MS_PER_HOUR) {
+        clicksIncomplete.push(dataMapClicks.get(ts) ?? null);
+        impressionsIncomplete.push(dataMapImpressions.get(ts) ?? null);
+        ctrIncomplete.push(ctr ?? null);
+      } else {
+        clicksIncomplete.push(null);
+        impressionsIncomplete.push(null);
+        ctrIncomplete.push(null);
+      }
+
+      clicksLast7Days.push(dataMapClicks.get(ts) ?? null);
+      impressionsLast7Days.push(dataMapImpressions.get(ts) ?? null);
+      ctrLast7Days.push(ctr ?? null);
+    }
+
     clicksPrev7Days.push(dataMapClicks.get(tsPrev) ?? null);
-
-    impressionsLast7Days.push(dataMapImpressions.get(ts) ?? null);
     impressionsPrev7Days.push(dataMapImpressions.get(tsPrev) ?? null);
-
-    ctrLast7Days.push(dataMapCtr.get(ts) ?? null);
-    ctrPrev7Days.push(dataMapCtr.get(tsPrev) ?? null);
+    ctrPrev7Days.push(ctrPrev ?? null);
   }
 
   return {
     timeseries,
     clicksLast7Days,
     clicksPrev7Days,
+    clicksIncomplete,
     impressionsLast7Days,
     impressionsPrev7Days,
+    impressionsIncomplete,
     ctrLast7Days,
     ctrPrev7Days,
+    ctrIncomplete,
+    dataMapImpressionsMax,
+    dataMapCtrMax,
+    dataMapCtr,
   };
 }
 
@@ -395,20 +451,28 @@ function drawChart(chartData) {
   let columns = [];
   let colors = {
     "clicks last 7 days": "#4285f4",
+    "incomplete clicks": "#4285f4",
     "clicks before": "#4285f4",
     "impressions last 7 days": "#5e35b1",
+    "incomplete impressions": "#5e35b1",
     "impressions before": "#5e35b1",
     "ctr last 7 days": "#00897b",
+    "incomplete ctr": "#00897b",
     "ctr before": "#00897b",
   };
 
   columns.push(chartData.timeseries);
   columns.push(chartData.clicksLast7Days);
+  columns.push(chartData.clicksIncomplete);
   columns.push(chartData.clicksPrev7Days);
   columns.push(chartData.impressionsLast7Days);
+  columns.push(chartData.impressionsIncomplete);
   columns.push(chartData.impressionsPrev7Days);
   columns.push(chartData.ctrLast7Days);
+  columns.push(chartData.ctrIncomplete);
   columns.push(chartData.ctrPrev7Days);
+
+  let ctrSet = new Set(["ctr last 7 days", "ctr before", "incomplete ctr"]);
 
   clearChart();
   chart = bb.generate({
@@ -418,17 +482,20 @@ function drawChart(chartData) {
     line: {
       classes: [
         "line-class-clicks-before",
+        "line-class-incomplete-clicks",
         "line-class-clicks-last-7-days",
         "line-class-impressions-before",
+        "line-class-incomplete-impressions",
         "line-class-impressions-last-7-days",
         "line-class-ctr-before",
+        "line-class-incomplete-ctr",
         "line-class-ctr-last-7-days",
       ],
     },
     bindto: "#chart",
     padding: {
       left: 46,
-      right: 46,
+      right: 60,
     },
     data: {
       x: "x",
@@ -437,35 +504,46 @@ function drawChart(chartData) {
       order: "desc",
       type: "line",
       axes: {
+        "impressions last 7 days": "y2",
+        "impressions before": "y2",
+        "incomplete impressions": "y2",
         "ctr last 7 days": "y2",
         "ctr before": "y2",
+        "incomplete ctr": "y2",
       },
       hide: [
         "impressions last 7 days",
         "impressions before",
+        "incomplete impressions",
         "ctr last 7 days",
         "ctr before",
+        "incomplete ctr",
       ],
     },
     tooltip: {
       format: {
         value: function (value, ratio, id, index) {
+          if (ctrSet.has(id)) {
+            let ts = chartData.timeseries[index + 1];
+            let ctr = chartData.dataMapCtr.get(ts);
+            return ctrFormat(ctr / 100);
+          }
           return parseFloat(value).toLocaleString();
         },
         title: function (x) {
-          return new Date(x).toLocaleString();
+          return dateFormat(x);
         },
       },
     },
     axis: {
       y: {
-        label: "clicks / impressions",
+        label: "clicks",
         padding: {
           top: 0,
           bottom: 0,
         },
         min: 0,
-        show: document.body.clientWidth > 767,
+        show: true,
         tick: {
           fit: true,
           format: function (d) {
@@ -474,13 +552,13 @@ function drawChart(chartData) {
         },
       },
       y2: {
-        label: "ctr",
+        label: "impressions",
         padding: {
           top: 0,
           bottom: 0,
         },
         min: 0,
-        show: document.body.clientWidth > 767,
+        show: true,
         tick: {
           fit: true,
           format: function (d) {
@@ -598,6 +676,15 @@ function tableButtons() {
   };
 }
 
+function rowStyle(row, index) {
+  if (row.incomplete) {
+    return {
+      classes: "incomplete",
+    };
+  }
+  return {};
+}
+
 let hoursColumns = [
   {
     field: "timestamp",
@@ -632,6 +719,14 @@ let hoursColumns = [
     visible: true,
     searchable: false,
     align: "right",
+  },
+  {
+    field: "incomplete",
+    title: "incomplete",
+    sortable: false,
+    visible: false,
+    searchable: false,
+    align: "left",
   },
 ];
 
@@ -699,9 +794,9 @@ function getLocalISOStringSlice(ts) {
 }
 
 function ctrFormat(value) {
-  if (!value) return 0;
-
-  return `${(value * 100).toPrecision(2)}%`;
+  const num = Number(value);
+  if (!isFinite(num) || num === 0) return "0.0%";
+  return `${(num * 100).toFixed(1)}%`;
 }
 
 function sanitizeFilename(input) {
@@ -744,6 +839,7 @@ async function generateHoursTable() {
     toolbar: "#hourstable-toolbar",
     uniqueId: "timestamp",
     classes: "table table-hover",
+    rowStyle: rowStyle,
     data: [],
     pageSize: settings.hours,
     showRefresh: false,
@@ -757,7 +853,7 @@ async function generateHoursTable() {
         return generateFilename("timeline");
       },
     },
-    sortOrder: "asc",
+    sortOrder: "desc",
     sortName: "timestamp",
   });
 }
@@ -798,12 +894,15 @@ function getYesterday() {
 }
 
 async function checkAuth() {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
   chrome.identity.getAuthToken({ interactive: false }, (token) => {
     if (chrome.runtime.lastError || !token) {
-      console.error(
-        "Could not get auth token:",
-        chrome.runtime.lastError.message,
-      );
+      $("#auth_dropdown")
+        .removeClass("btn-outline-primary")
+        .removeClass("btn-outline-success")
+        .addClass("btn-outline-danger");
       return;
     }
     $("#auth_dropdown")
@@ -811,11 +910,6 @@ async function checkAuth() {
       .removeClass("btn-danger")
       .addClass("btn-outline-success");
     settings.auth.token = token;
-    listSites();
-    if (settings.siteUrl) {
-      getTimeline();
-      getPages();
-    }
   });
 }
 
@@ -842,7 +936,27 @@ function assemblePageFilters() {
 }
 
 async function init() {
-  checkAuth();
+  chrome.identity.getAuthToken({ interactive: false }, (token) => {
+    if (chrome.runtime.lastError || !token) {
+      $("#auth_dropdown")
+        .removeClass("btn-outline-primary")
+        .removeClass("btn-outline-success")
+        .addClass("btn-outline-danger");
+      return;
+    }
+    $("#auth_dropdown")
+      .removeClass("btn-outline-primary")
+      .removeClass("btn-outline-danger")
+      .addClass("btn-outline-success");
+    settings.auth.token = token;
+
+    listSites();
+    if (settings.siteUrl) {
+      getTimeline();
+      getPages();
+    }
+  });
+  document.addEventListener("visibilitychange", checkAuth);
 
   $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
@@ -863,8 +977,9 @@ async function init() {
   $(".nav-tabs").on("click", ".nav-item", function (e) {
     e.preventDefault(); // Prevent the default link behavior
 
-    $tabs.toggleClass(["invisible", "visible"]);
-    $tabs.toggleClass("d-none");
+    let id = $(this).data("id");
+    $tabs.removeClass("visible").addClass("invisible d-none");
+    $(`#${id}Tab`).removeClass("invisible d-none").addClass("visible");
 
     // Remove 'active' from all nav links in the same nav-tabs container
     $(this)
@@ -883,6 +998,11 @@ async function init() {
   $("#type").on("change", function () {
     let type = $(this).val();
     settings.type = type;
+
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll");
+    $hoursTable.bootstrapTable("removeAll");
+
     addFilter("type", type);
     getTimeline();
     getPages();

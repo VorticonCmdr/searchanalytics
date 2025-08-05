@@ -17,14 +17,32 @@ body {
     width: fit-content;
 }
 .line-class-clicks-last-7-days {
-    stroke-dasharray: 3 4;
-    stroke-width: 3px;
+    stroke-dasharray: 4 4;
+    stroke-width: 2;
 }
 .line-class-impressions-last-7-days {
-    stroke-dasharray: 3 4;
-    stroke-width: 3px;
+    stroke-dasharray: 4 4;
+    stroke-width: 2;
 }
 .line-class-ctr-last-7-days {
-    stroke-dasharray: 3 4;
-    stroke-width: 3px;
+    stroke-dasharray: 4 4;
+    stroke-width: 2;
+}
+.line-class-incomplete-clicks {
+    stroke-dasharray: 2 4;
+    stroke-width: 2;
+}
+.line-class-incomplete-impressions {
+    stroke-dasharray: 2 4;
+    stroke-width: 2;
+}
+.line-class-incomplete-ctr {
+    stroke-dasharray: 2 4;
+    stroke-width: 2;
+}
+.bb-tooltip .value {
+    float: right;
+}
+.incomplete td {
+    color: #696969;
 }

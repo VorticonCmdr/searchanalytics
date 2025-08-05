@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Search Analytics alternative",
   "short_name": "SAa",
-  "version": "1.1",
+  "version": "1.3",
   "description": "A Chrome extension to interact with the Google Search Console API.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApAJaB+kwDW5lSuEMZ5XRbuDLKo4Mt9pkOeCXFbBskGxv+hJyXjNOBgDUIbhIX833McJS0Gvxld0VZUt8FbF9fCUIxBX7IIqJqI3/MpWuy5PsM+9kxNywPFvxLe/jFQa+02siWfI+uZeyrmF29EThvbCD8Uw0+4we63a+oxQuN8l4nuM0Qno4W0JWHYL8sGUKrxr1EyTWt2iBaxJe0ZoGu4eGFytcv2cJm5mlrvIOnDod0Ry5VQJBpmI2c3JHvmnlxRQ01lM49R1DRaUmz/YcOlvbmdtuLokFtYIWpzxzru5QZ07vaIy8qAdmjM41EeW7d134G6o/NQ4HIspBOljJ8QIDAQAB",
   "permissions": ["identity", "storage", "unlimitedStorage"],
@@ -14,6 +14,7 @@
     "default_title": "GSC alternative UI"
   },
   "icons": {
+    "128": "/icons/logo-128.png",
     "180": "/icons/logo-180.png",
     "192": "/icons/logo-192.png"
   },

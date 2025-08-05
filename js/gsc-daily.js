@@ -16,6 +16,7 @@ let settings = {
   siteUrl: currentURL.searchParams.get("property") || null,
   page: currentURL.searchParams.get("page") || null,
   groupBy: currentURL.searchParams.get("groupBy") || "month",
+  dataState: currentURL.searchParams.get("dataState") || "ALL",
 };
 
 const authorizeButton = document.getElementById("authorize_button");
@@ -140,12 +141,12 @@ $("#fetch").on("click", function () {
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
   $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
 
-  settings.siteUrl = $("#property").val().trim();
   if (!settings.siteUrl) {
     return;
   }
   getTimeline();
   getPages();
+  listSites();
 });
 
 async function getPages() {
@@ -246,7 +247,7 @@ async function getTimeline() {
     dimensions: ["DATE"],
     searchType: settings.type,
     rowLimit: 10000,
-    dataState: "FINAL",
+    dataState: settings.dataState,
     startDate: settings.from,
     endDate: settings.to,
     dimensionFilterGroups: [{ filters: assemblePageFilters() }],
@@ -285,10 +286,11 @@ async function getTimeline() {
 
     const data = await response.json();
 
-    const { timeline: monthlyTL, chartData: monthlyCD } = transformData(
-      data,
-      (groupBy = settings.groupBy),
-    );
+    const {
+      timeline: monthlyTL,
+      chartData: monthlyCD,
+      firstIncompleteHour: firstIncompleteHour,
+    } = transformData(data, (groupBy = settings.groupBy));
 
     $hoursTable.bootstrapTable("load", monthlyTL).bootstrapTable("hideLoading");
 
@@ -328,12 +330,23 @@ function transformData(data, groupBy = "day") {
     clicks: ["clicks"],
     impressions: ["impressions"],
     ctr: ["ctr"],
+    incompleteClicks: ["incomplete clicks"],
+    incompleteImpressions: ["incomplete impressions"],
+    incompleteCtr: ["incomplete ctr"],
   };
+
+  let firstIncompleteHour = Infinity;
 
   let timeline = [];
 
   if (groupBy === "day") {
+    if (data?.metadata?.firstIncompleteDate) {
+      firstIncompleteHour = new Date(
+        data.metadata.firstIncompleteDate,
+      ).getTime();
+    }
     timeline = data.rows.map((d) => {
+      const timestamp = new Date(d.keys[0]).getTime();
       const dt = new Date(d.keys[0]);
       const yyyy = dt.toISOString().slice(0, 4);
       const mm = dt.toISOString().slice(5, 7);
@@ -350,9 +363,15 @@ function transformData(data, groupBy = "day") {
         clicks: d.clicks,
         impressions: d.impressions,
         ctr: d.ctr,
+        incomplete: timestamp >= firstIncompleteHour,
       };
     });
   } else if (groupBy === "month") {
+    if (data?.metadata?.firstIncompleteDate) {
+      firstIncompleteHour = new Date(
+        data.metadata.firstIncompleteDate.slice(0, 7),
+      ).getTime();
+    }
     const monthMap = new Map();
     data.rows.forEach((d) => {
       const dt = new Date(d.keys[0]);
@@ -374,6 +393,8 @@ function transformData(data, groupBy = "day") {
 
     // Build timeline & chartData
     sortedKeys.forEach((key) => {
+      const timestamp = new Date(key).getTime();
+
       const [yyyy, mm] = key.split("-");
       const { clicks, impressions } = monthMap.get(key);
       const ctr = impressions > 0 ? clicks / impressions : 0;
@@ -390,13 +411,14 @@ function transformData(data, groupBy = "day") {
         clicks,
         impressions,
         ctr,
+        incomplete: timestamp >= firstIncompleteHour,
       });
     });
   } else {
     throw new Error(`Unknown groupBy value: ${groupBy}`);
   }
 
-  return { timeline, chartData };
+  return { timeline, chartData, firstIncompleteHour };
 }
 
 function clearChart() {
@@ -682,6 +704,14 @@ let hoursColumns = [
     searchable: false,
     align: "right",
   },
+  {
+    field: "incomplete",
+    title: "incomplete",
+    sortable: false,
+    visible: false,
+    searchable: false,
+    align: "left",
+  },
 ];
 
 let pagesColumns = [
@@ -771,8 +801,6 @@ let dtf = new Intl.DateTimeFormat("default", {
   year: "2-digit",
   month: "2-digit",
   day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
 });
 
 function dateFormat(value) {
@@ -795,9 +823,9 @@ function getLocalISOStringSlice(ts) {
 }
 
 function ctrFormat(value) {
-  if (!value) return 0;
-
-  return `${(value * 100).toPrecision(2)}%`;
+  const num = Number(value);
+  if (!isFinite(num) || num === 0) return "0.0%";
+  return `${(num * 100).toFixed(1)}%`;
 }
 
 function sanitizeFilename(input) {
@@ -901,6 +929,15 @@ async function generatePagesTable() {
   });
 }
 
+function rowStyle(row, index) {
+  if (row.incomplete) {
+    return {
+      classes: "incomplete",
+    };
+  }
+  return {};
+}
+
 async function generateHoursTable() {
   $hoursTable.bootstrapTable({
     toolbar: "#hourstable-toolbar",
@@ -908,6 +945,7 @@ async function generateHoursTable() {
     classes: "table table-hover",
     data: [],
     pageSize: settings.hours,
+    rowStyle: rowStyle,
     showRefresh: false,
     buttons: tableButtons,
     columns: hoursColumns,
@@ -919,7 +957,7 @@ async function generateHoursTable() {
         return generateFilename("timeline");
       },
     },
-    sortOrder: "asc",
+    sortOrder: "desc",
     sortName: "timestamp",
   });
 }
@@ -960,12 +998,15 @@ function getYesterday() {
 }
 
 async function checkAuth() {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
   chrome.identity.getAuthToken({ interactive: false }, (token) => {
     if (chrome.runtime.lastError || !token) {
-      console.error(
-        "Could not get auth token:",
-        chrome.runtime.lastError.message,
-      );
+      $("#auth_dropdown")
+        .removeClass("btn-outline-primary")
+        .removeClass("btn-outline-success")
+        .addClass("btn-outline-danger");
       return;
     }
     $("#auth_dropdown")
@@ -973,11 +1014,13 @@ async function checkAuth() {
       .removeClass("btn-outline-danger")
       .addClass("btn-outline-success");
     settings.auth.token = token;
+    /*
     listSites();
     if (settings.siteUrl) {
       getTimeline();
       getPages();
     }
+    */
   });
 }
 
@@ -1055,7 +1098,27 @@ function addEvents(rows) {
 }
 
 async function init() {
-  checkAuth();
+  chrome.identity.getAuthToken({ interactive: false }, (token) => {
+    if (chrome.runtime.lastError || !token) {
+      $("#auth_dropdown")
+        .removeClass("btn-outline-primary")
+        .removeClass("btn-outline-success")
+        .addClass("btn-outline-danger");
+      return;
+    }
+    $("#auth_dropdown")
+      .removeClass("btn-outline-primary")
+      .removeClass("btn-outline-danger")
+      .addClass("btn-outline-success");
+    settings.auth.token = token;
+
+    listSites();
+    if (settings.siteUrl) {
+      getTimeline();
+      getPages();
+    }
+  });
+  document.addEventListener("visibilitychange", checkAuth);
 
   $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
