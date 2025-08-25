@@ -25,6 +25,8 @@ let chart;
 let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
 let $tabs = $(".tab");
+let $propertyBtn = $("#propertyBtn");
+let $propertyInput = $("#property");
 
 Date.prototype.getISOWeek = function () {
   // Copy date so we don't modify the original
@@ -144,19 +146,6 @@ async function listSites() {
   }
 }
 
-$("#fetch").on("click", function () {
-  clearChart();
-  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-  if (!settings.siteUrl) {
-    return;
-  }
-  getTimeline();
-  getPages();
-  listSites();
-});
-
 async function getPages() {
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
 
@@ -198,16 +187,30 @@ async function getPages() {
 
     const data = await response.json();
 
-    const pages = data.rows
+    let firstClicks = {};
+
+    let pages = data.rows
+      .map((d) => {
+        let ts = new Date(d?.keys?.[0]).getTime();
+        let page = d?.keys?.[1];
+        if (!firstClicks[page]) {
+          firstClicks[page] = ts;
+        }
+        if (ts < firstClicks[page]) {
+          firstClicks[page] = ts;
+        }
+        return d;
+      })
       .filter(
         (d) =>
           new Date(d?.keys?.[0]).getTime() >= settings.from &&
           new Date(d?.keys?.[0]).getTime() <= settings.to,
       )
       .map((d) => {
+        let page = d?.keys?.[1];
         return {
-          timestamp: new Date(d?.keys?.[0]).getTime(),
-          page: d?.keys?.[1],
+          timestamp: firstClicks[page],
+          page: page,
           clicks: d?.clicks,
           impressions: d?.impressions,
           ctr: d?.ctr,
@@ -225,7 +228,6 @@ async function getPages() {
 
 function aggregateByUrl(rows) {
   const agg = {};
-  const ts = new Date().getTime();
 
   rows.forEach((row) => {
     const url = row.page;
@@ -236,7 +238,7 @@ function aggregateByUrl(rows) {
         impressions: 0,
         ctrSum: 0,
         count: 0,
-        timestamp: ts,
+        timestamp: 0,
       };
     }
 
@@ -244,8 +246,7 @@ function aggregateByUrl(rows) {
     agg[url].impressions += row.impressions;
     agg[url].ctrSum += row.ctr;
     agg[url].count += 1;
-    agg[url].timestamp =
-      row.timestamp < agg[url].timestamp ? row.timestamp : agg[url].timestamp;
+    agg[url].timestamp = row.timestamp;
   });
 
   return Object.values(agg).map((entry) => ({
@@ -335,6 +336,11 @@ function generateHourlyGraphData(data) {
   if (data?.metadata?.firstIncompleteHour) {
     firstIncompleteHour = new Date(data.metadata.firstIncompleteHour).getTime();
   }
+  let lastIncompleteHour = 0;
+  let startLast7Days = Infinity;
+  let endLast7Days = 0;
+  let startPrev7Days = Infinity;
+  let endPrev7Days = 0;
 
   const dataMapClicks = new Map();
   const dataMapImpressions = new Map();
@@ -363,11 +369,13 @@ function generateHourlyGraphData(data) {
   const mostRecent = new Date(mostRecentStr);
   mostRecent.setDate(mostRecent.getDate() + 1);
   mostRecent.setHours(0, 0, 0, 0);
+  endLast7Days = mostRecent.getTime();
 
   // Calculate start time: 7 days before, at 00:00
   const start = new Date(mostRecent);
   start.setDate(start.getDate() - 7);
   start.setHours(0, 0, 0, 0);
+  startLast7Days = start.getTime();
 
   const timeseries = ["x"];
   const clicksLast7Days = ["clicks last 7 days"];
@@ -395,6 +403,9 @@ function generateHourlyGraphData(data) {
       clicksIncomplete.push(dataMapClicks.get(ts) ?? null);
       impressionsIncomplete.push(dataMapImpressions.get(ts) ?? null);
       ctrIncomplete.push(ctr ?? null);
+      if (dataMapClicks.get(ts) + dataMapImpressions.get(ts)) {
+        lastIncompleteHour = ts + MS_PER_HOUR;
+      }
 
       clicksLast7Days.push(null);
       impressionsLast7Days.push(null);
@@ -404,6 +415,10 @@ function generateHourlyGraphData(data) {
         clicksIncomplete.push(dataMapClicks.get(ts) ?? null);
         impressionsIncomplete.push(dataMapImpressions.get(ts) ?? null);
         ctrIncomplete.push(ctr ?? null);
+
+        if (dataMapClicks.get(ts) + dataMapImpressions.get(ts)) {
+          lastIncompleteHour = ts + MS_PER_HOUR;
+        }
       } else {
         clicksIncomplete.push(null);
         impressionsIncomplete.push(null);
@@ -418,7 +433,18 @@ function generateHourlyGraphData(data) {
     clicksPrev7Days.push(dataMapClicks.get(tsPrev) ?? null);
     impressionsPrev7Days.push(dataMapImpressions.get(tsPrev) ?? null);
     ctrPrev7Days.push(ctrPrev ?? null);
+
+    if (dataMapClicks.get(tsPrev) + dataMapImpressions.get(tsPrev)) {
+      if (tsPrev < startPrev7Days) {
+        startPrev7Days = tsPrev;
+      }
+      if (tsPrev > endPrev7Days) {
+        endPrev7Days = tsPrev;
+      }
+    }
   }
+
+  console.log(startPrev7Days, endPrev7Days);
 
   return {
     timeseries,
@@ -434,6 +460,12 @@ function generateHourlyGraphData(data) {
     dataMapImpressionsMax,
     dataMapCtrMax,
     dataMapCtr,
+    startLast7Days,
+    endLast7Days,
+    firstIncompleteHour,
+    lastIncompleteHour,
+    startPrev7Days,
+    endPrev7Days,
   };
 }
 
@@ -474,6 +506,7 @@ function drawChart(chartData) {
 
   let ctrSet = new Set(["ctr last 7 days", "ctr before", "incomplete ctr"]);
 
+  const MS_BEFORE = 7 * 24 * 60 * 60 * 1000;
   clearChart();
   chart = bb.generate({
     point: {
@@ -503,6 +536,17 @@ function drawChart(chartData) {
       colors: colors,
       order: "desc",
       type: "line",
+      names: {
+        "clicks last 7 days": `clicks ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
+        "incomplete clicks": `incomplete clicks ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
+        "clicks before": `clicks ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
+        "impressions last 7 days": `impressions ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
+        "incomplete impressions": `incomplete impressions ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
+        "impressions before": `incomplete impressions ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
+        "ctr last 7 days": `ctr ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
+        "incomplete ctr": `incomplete ctr ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
+        "ctr before": `ctr ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
+      },
       axes: {
         "impressions last 7 days": "y2",
         "impressions before": "y2",
@@ -522,6 +566,18 @@ function drawChart(chartData) {
     },
     tooltip: {
       format: {
+        name: function (name, ratio, id, index) {
+          let metric = name?.split(" ")?.[0] || name;
+          let part2 = name?.split(" ")?.[1] || name;
+          let date = dayFormat(chartData.timeseries[index]);
+          if (metric == "incomplete") {
+            metric = `incomplete ${part2}`;
+          }
+          if (part2 == "before") {
+            date = dayFormat(chartData.timeseries[index] - MS_BEFORE);
+          }
+          return `${metric} ${date}`;
+        },
         value: function (value, ratio, id, index) {
           if (ctrSet.has(id)) {
             let ts = chartData.timeseries[index + 1];
@@ -531,7 +587,10 @@ function drawChart(chartData) {
           return parseFloat(value).toLocaleString();
         },
         title: function (x) {
-          return dateFormat(x);
+          let d = new Date(x).getTime();
+          let from = timeWeekdayFormat(d);
+          let to = timeFormat(d + 60 * 60 * 1000);
+          return `${from} - ${to}`;
         },
       },
     },
@@ -588,8 +647,9 @@ function drawChart(chartData) {
     end: settings.to,
     class: "regionCut",
     label: {
-      text: "pages",
+      text: `${dateWeekdayFormat(settings.from)}`,
       x: 5,
+      y: 4,
     },
   });
 }
@@ -685,6 +745,100 @@ function rowStyle(row, index) {
   return {};
 }
 
+let datetimeFormat = new Intl.DateTimeFormat("default", {
+  year: "2-digit",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+function dateFormat(value) {
+  if (!value) return undefined;
+
+  return datetimeFormat.format(new Date(Number(value)));
+}
+
+let dateWeekdayFormatter = new Intl.DateTimeFormat("default", {
+  weekday: "long",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+function dateWeekdayFormat(value) {
+  if (!value) return undefined;
+
+  return dateWeekdayFormatter.format(new Date(Number(value)));
+}
+
+let hourWeekdayFormat = new Intl.DateTimeFormat("default", {
+  weekday: "long",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+function timeWeekdayFormat(value) {
+  if (!value) return undefined;
+
+  return hourWeekdayFormat.format(new Date(Number(value)));
+}
+
+let hourFormat = new Intl.DateTimeFormat("default", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+function timeFormat(value) {
+  if (!value) return undefined;
+
+  return hourFormat.format(new Date(Number(value)));
+}
+
+let dateonlyFormat = new Intl.DateTimeFormat("default", {
+  year: "2-digit",
+  month: "2-digit",
+  day: "2-digit",
+});
+function dayFormat(value) {
+  if (!value) return undefined;
+
+  try {
+    return dateonlyFormat.format(new Date(Number(value)));
+  } catch (e) {
+    return "";
+  }
+}
+
+let dayonlyFormatter = new Intl.DateTimeFormat("default", {
+  month: "2-digit",
+  day: "2-digit",
+});
+function dayOnlyFormat(value) {
+  if (!value) return undefined;
+
+  try {
+    return dayonlyFormatter.format(new Date(Number(value)));
+  } catch (e) {
+    return "";
+  }
+}
+
+function toLocaleString(value) {
+  if (!value) return "";
+  let d = new Date(Number(value));
+  return d.toLocaleString();
+}
+
+function getLocalISOStringSlice(ts) {
+  const now = new Date(ts);
+  const offset = now.getTimezoneOffset(); // in minutes
+  const localTime = new Date(now.getTime() - offset * 60000);
+  return localTime.toISOString().slice(0, 16);
+}
+
+function ctrFormat(value) {
+  const num = Number(value);
+  if (!isFinite(num) || num === 0) return "0.0%";
+  return `${(num * 100).toFixed(1)}%`;
+}
+
 let hoursColumns = [
   {
     field: "timestamp",
@@ -764,40 +918,16 @@ let pagesColumns = [
     searchable: false,
     align: "right",
   },
+  {
+    field: "timestamp",
+    title: "first impression",
+    formatter: dateFormat,
+    sortable: true,
+    visible: false,
+    searchable: true,
+    align: "right",
+  },
 ];
-
-let dtf = new Intl.DateTimeFormat("default", {
-  year: "2-digit",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-function dateFormat(value) {
-  if (!value) return undefined;
-
-  return dtf.format(new Date(Number(value)));
-}
-
-function toLocaleString(value) {
-  if (!value) return "";
-  let d = new Date(Number(value));
-  return d.toLocaleString();
-}
-
-function getLocalISOStringSlice(ts) {
-  const now = new Date(ts);
-  const offset = now.getTimezoneOffset(); // in minutes
-  const localTime = new Date(now.getTime() - offset * 60000);
-  return localTime.toISOString().slice(0, 16);
-}
-
-function ctrFormat(value) {
-  const num = Number(value);
-  if (!isFinite(num) || num === 0) return "0.0%";
-  return `${(num * 100).toFixed(1)}%`;
-}
 
 function sanitizeFilename(input) {
   const illegalRe = /[\\\/:*?"<>|\x00-\x1F]/g;
@@ -960,6 +1090,9 @@ async function init() {
 
   $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
+  if (settings.siteUrl) {
+    $("#propertyBtn").text(settings.siteUrl);
+  }
 
   let yesterday = getYesterday();
   if (!settings.from) {
@@ -1009,21 +1142,29 @@ async function init() {
   });
 
   $("#property").on("change", function () {
+    let selectedValue = $(this).val();
+    if (!selectedValue) {
+      //console.info("No property selected");
+      return;
+    }
+    if (!settings.properties.includes(selectedValue)) {
+      //console.warn("No valid property selected");
+      $("#property").addClass("is-invalid");
+      $("#propertyBtn").addClass("btn-outline-danger");
+      $("#propertyBtn").removeClass("btn-outline-secondary");
+      return;
+    }
+    $("#property").removeClass("is-invalid");
+    $("#propertyBtn").removeClass("btn-outline-danger");
+    $("#propertyBtn").addClass("btn-outline-secondary");
     clearChart();
     $pagesTable.bootstrapTable("removeAll");
     $hoursTable.bootstrapTable("removeAll");
 
-    let selectedValue = $(this).val();
-    if (!selectedValue) {
-      console.log("No property selected");
-      return;
-    }
-    if (!settings.properties.includes(selectedValue)) {
-      return;
-    }
     settings.siteUrl = selectedValue;
     $("#property").attr("placeholder", settings.siteUrl);
     $("#property").val("");
+    $("#propertyBtn").text(settings.siteUrl);
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
@@ -1059,8 +1200,9 @@ async function init() {
         end: settings.to,
         class: "regionCut",
         label: {
-          text: "pages",
+          text: `${dateWeekdayFormat(settings.from)}`,
           x: 5,
+          y: 4,
         },
       });
       getPages();
@@ -1103,5 +1245,23 @@ async function init() {
     getTimeline();
     getPages();
   });
+
+  $propertyBtn.on("click", function () {
+    $propertyBtn.removeClass("d-block").addClass("d-none");
+    $propertyInput.removeClass("d-none").addClass("d-block").focus();
+  });
+
+  // input blur → hide input, show button
+  $propertyInput.on("blur", function () {
+    $propertyInput.removeClass("d-block").addClass("d-none");
+    $propertyBtn.removeClass("d-none").addClass("d-block");
+  });
+
+  const popoverTriggerList = document.querySelectorAll(
+    '[data-bs-toggle="popover"]',
+  );
+  const popoverList = [...popoverTriggerList].map(
+    (popoverTriggerEl) => new bootstrap.Popover(popoverTriggerEl),
+  );
 }
 init();

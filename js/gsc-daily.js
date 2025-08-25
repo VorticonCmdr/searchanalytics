@@ -33,6 +33,8 @@ let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
 let $eventsTable = $("#eventstable");
 let $tabs = $(".tab");
+let $propertyBtn = $("#propertyBtn");
+let $propertyInput = $("#property");
 
 authorizeButton.onclick = function handleAuthClick() {
   chrome.identity.getAuthToken({ interactive: true }, (token) => {
@@ -135,19 +137,6 @@ async function listSites() {
     console.error(`Error: ${err.message}`);
   }
 }
-
-$("#fetch").on("click", function () {
-  clearChart();
-  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-  if (!settings.siteUrl) {
-    return;
-  }
-  getTimeline();
-  getPages();
-  listSites();
-});
 
 async function getPages() {
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
@@ -1123,6 +1112,9 @@ async function init() {
   $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
   $("#groupBy").val(settings.groupBy);
+  if (settings.siteUrl) {
+    $("#propertyBtn").text(settings.siteUrl);
+  }
 
   $("#from").val(settings.from);
   $("#to").val(settings.to);
@@ -1207,10 +1199,6 @@ async function init() {
   });
 
   $("#property").on("change", function () {
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll");
-    $hoursTable.bootstrapTable("removeAll");
-
     let selectedValue = $(this).val();
     if (!selectedValue) {
       console.log("No property selected");
@@ -1219,9 +1207,14 @@ async function init() {
     if (!settings.properties.includes(selectedValue)) {
       return;
     }
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll");
+    $hoursTable.bootstrapTable("removeAll");
+
     settings.siteUrl = selectedValue;
     $("#property").attr("placeholder", settings.siteUrl);
     $("#property").val("");
+    $("#propertyBtn").text(settings.siteUrl);
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
@@ -1310,6 +1303,17 @@ async function init() {
       },
     ]);
     saveEvents();
+  });
+
+  $propertyBtn.on("click", function () {
+    $propertyBtn.removeClass("d-block").addClass("d-none");
+    $propertyInput.removeClass("d-none").addClass("d-block").focus();
+  });
+
+  // input blur → hide input, show button
+  $propertyInput.on("blur", function () {
+    $propertyInput.removeClass("d-block").addClass("d-none");
+    $propertyBtn.removeClass("d-none").addClass("d-block");
   });
 }
 init();

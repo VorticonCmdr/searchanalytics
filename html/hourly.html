@@ -53,44 +53,50 @@
                         </li>
                     </ul>
                 </div>
-                <div>
-                    <select id="type" class="form-select">
-                        <option value="discover">Discover</option>
-                        <option value="googleNews">Google News</option>
-                        <option value="web">Web (search)</option>
-                        <option value="news">News (search)</option>
-                        <option value="image">Image (search)</option>
-                        <option value="video">Video (search)</option>
-                    </select>
-                </div>
                 <div class="input-group">
-                    <input
-                        type="search"
-                        class="form-control"
-                        placeholder="property"
-                        aria-label="property"
-                        id="property"
-                        list="properties-list"
-                    />
-                    <datalist id="properties-list"></datalist>
-                    <button
-                        id="fetch"
-                        class="btn btn-outline-secondary"
-                        type="button"
-                    >
-                        (re)load data
-                    </button>
-                </div>
-                <div class="input-group">
-                    <button
-                        type="button"
-                        id="pageFilter"
-                        class="btn btn-outline-secondary"
-                        data-bs-toggle="modal"
-                        data-bs-target="#pageFilterModal"
-                    >
-                        url filter
-                    </button>
+                    <div>
+                        <select id="type" class="form-select">
+                            <option value="discover">Discover</option>
+                            <option value="googleNews">Google News</option>
+                            <option value="web">Web (search)</option>
+                            <option value="news">News (search)</option>
+                            <option value="image">Image (search)</option>
+                            <option value="video">Video (search)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            id="propertyBtn"
+                            class="btn btn-outline-secondary textnowrap d-block"
+                            data-bs-toggle="popover"
+                            data-bs-trigger="hover"
+                            data-bs-placement="bottom"
+                            data-bs-content="select GSC property here"
+                        >
+                            select property <i class="bi bi-caret-down-fill"></i>
+                        </button>
+                        <input
+                            type="search"
+                            class="form-control d-none"
+                            placeholder="property"
+                            aria-label="property"
+                            id="property"
+                            list="properties-list"
+                        />
+                        <datalist id="properties-list"></datalist>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            id="pageFilter"
+                            class="btn btn-outline-secondary textnowrap"
+                            data-bs-toggle="modal"
+                            data-bs-target="#pageFilterModal"
+                        >
+                            url filter
+                        </button>
+                    </div>
                 </div>
 
                 <div class="btn-group" role="group">
@@ -125,7 +131,7 @@
             </div>
         </nav>
 
-        <div class="container-fluid">
+        <div class="container-fluid px-0">
             <div id="chart-and-filter" class="my-2">
                 <div
                     id="chart"
@@ -138,21 +144,21 @@
         <div class="container bg-white py-4 my-4">
             <ul class="nav nav-tabs nav-justified">
                 <li data-id="hours" class="nav-item">
-                    <span class="nav-link text-primary">hours</span>
+                    <span class="nav-link text-primary" data-bs-toggle="popover" data-bs-trigger="hover" data-bs-placement="top" data-bs-content="performance by hour within all the available data">hours</span>
                 </li>
                 <li data-id="pages" class="nav-item">
-                    <span class="nav-link active text-secondary">pages</span>
+                    <span class="nav-link active text-secondary" data-bs-toggle="popover" data-bs-trigger="hover" data-bs-placement="top" data-bs-content="url performance within the selected timeframe">pages</span>
                 </li>
             </ul>
             <div class="border-start border-end">
                 <div id="hoursTab" class="tab invisible d-none">
                     <div id="hourstable-toolbar" class="row">
-                        <div class="col">
+                        <div class="col px-0">
                             <div class="input-group">
                                 <span
                                     class="input-group-text"
                                     id="from-description"
-                                    >from</span
+                                    >pages from</span
                                 >
                                 <input
                                     type="datetime-local"
@@ -160,10 +166,6 @@
                                     id="from"
                                     step="3600"
                                 />
-                            </div>
-                        </div>
-                        <div class="col">
-                            <div class="input-group">
                                 <span
                                     class="input-group-text"
                                     id="to-description"
@@ -183,20 +185,7 @@
 
                 <div id="pagesTab" class="tab visible">
                     <div id="pagestable-toolbar" class="row">
-                        <div class="col">
-                            <div class="input-group">
-                                <span
-                                    class="input-group-text"
-                                    id="metric-description"
-                                    >metric</span
-                                >
-                                <select id="metric" class="form-select">
-                                  <option value="clicks">clicks</option>
-                                  <option value="impressions">impressions</option>
-                                  <option value="ctr">ctr</option>
-                                </select>
-                            </div>
-                        </div>
+
                     </div>
                     <table id="pagestable"></table>
                 </div>

@@ -29,6 +29,8 @@ let chart;
 let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
 let $tabs = $(".tab");
+let $propertyBtn = $("#propertyBtn");
+let $propertyInput = $("#property");
 
 Date.prototype.getISOWeek = function () {
   // Copy date so we don't modify the original
@@ -147,19 +149,6 @@ async function listSites() {
     console.error(`Error: ${err.message}`);
   }
 }
-
-$("#fetch").on("click", function () {
-  clearChart();
-  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-  if (!settings.siteUrl) {
-    return;
-  }
-  getTimeline();
-  getPages();
-  listSites();
-});
 
 async function getPages() {
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
@@ -1093,6 +1082,9 @@ async function init() {
 
   $("#property").attr("placeholder", settings.siteUrl);
   $("#type").val(settings.type);
+  if (settings.siteUrl) {
+    $("#propertyBtn").text(settings.siteUrl);
+  }
 
   let yesterday = getYesterday10();
   if (!settings.from) {
@@ -1142,21 +1134,28 @@ async function init() {
   });
 
   $("#property").on("change", function () {
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll");
-    $hoursTable.bootstrapTable("removeAll");
-
     let selectedValue = $(this).val();
     if (!selectedValue) {
       console.log("No property selected");
       return;
     }
     if (!settings.properties.includes(selectedValue)) {
+      //console.warn("No valid property selected");
+      $("#property").addClass("is-invalid");
+      $("#propertyBtn").addClass("btn-outline-danger");
+      $("#propertyBtn").removeClass("btn-outline-secondary");
       return;
     }
+    $("#property").removeClass("is-invalid");
+    $("#propertyBtn").removeClass("btn-outline-danger");
+    $("#propertyBtn").addClass("btn-outline-secondary");
+    clearChart();
+    $pagesTable.bootstrapTable("removeAll");
+    $hoursTable.bootstrapTable("removeAll");
     settings.siteUrl = selectedValue;
     $("#property").attr("placeholder", settings.siteUrl);
     $("#property").val("");
+    $("#propertyBtn").text(settings.siteUrl);
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
@@ -1255,5 +1254,23 @@ async function init() {
       y: settings.metric,
     });
   });
+
+  $propertyBtn.on("click", function () {
+    $propertyBtn.removeClass("d-block").addClass("d-none");
+    $propertyInput.removeClass("d-none").addClass("d-block").focus();
+  });
+
+  // input blur → hide input, show button
+  $propertyInput.on("blur", function () {
+    $propertyInput.removeClass("d-block").addClass("d-none");
+    $propertyBtn.removeClass("d-none").addClass("d-block");
+  });
+
+  const popoverTriggerList = document.querySelectorAll(
+    '[data-bs-toggle="popover"]',
+  );
+  const popoverList = [...popoverTriggerList].map(
+    (popoverTriggerEl) => new bootstrap.Popover(popoverTriggerEl),
+  );
 }
 init();

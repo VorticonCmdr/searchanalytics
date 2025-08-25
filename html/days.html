@@ -53,50 +53,56 @@
                         </li>
                     </ul>
                 </div>
-                <div>
-                    <select id="type" class="form-select">
-                        <option value="discover">Discover</option>
-                        <option value="googleNews">Google News</option>
-                        <option value="web">Web (search)</option>
-                        <option value="news">News (search)</option>
-                        <option value="image">Image (search)</option>
-                        <option value="video">Video (search)</option>
-                    </select>
-                </div>
-                <div>
-                    <select id="groupBy" class="form-select">
-                        <option value="month">by month</option>
-                        <option value="day">by day</option>
-                    </select>
-                </div>
                 <div class="input-group">
-                    <input
-                        type="search"
-                        class="form-control"
-                        placeholder="property"
-                        aria-label="property"
-                        id="property"
-                        list="properties-list"
-                    />
-                    <datalist id="properties-list"></datalist>
-                    <button
-                        id="fetch"
-                        class="btn btn-outline-secondary"
-                        type="button"
-                    >
-                        (re)load data
-                    </button>
-                </div>
-                <div class="input-group">
-                    <button
-                        type="button"
-                        id="pageFilter"
-                        class="btn btn-outline-secondary"
-                        data-bs-toggle="modal"
-                        data-bs-target="#pageFilterModal"
-                    >
-                        url filter
-                    </button>
+                    <div>
+                        <select id="type" class="form-select">
+                            <option value="discover">Discover</option>
+                            <option value="googleNews">Google News</option>
+                            <option value="web">Web (search)</option>
+                            <option value="news">News (search)</option>
+                            <option value="image">Image (search)</option>
+                            <option value="video">Video (search)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <select id="groupBy" class="form-select">
+                            <option value="month">by month</option>
+                            <option value="day">by day</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            id="propertyBtn"
+                            class="btn btn-outline-secondary textnowrap d-block"
+                            data-bs-toggle="popover"
+                            data-bs-trigger="hover"
+                            data-bs-placement="bottom"
+                            data-bs-content="select GSC property here"
+                        >
+                            select property <i class="bi bi-caret-down-fill"></i>
+                        </button>
+                        <input
+                            type="search"
+                            class="form-control d-none"
+                            placeholder="property"
+                            aria-label="property"
+                            id="property"
+                            list="properties-list"
+                        />
+                        <datalist id="properties-list"></datalist>
+                    </div>
+                    <div>
+                        <button
+                            type="button"
+                            id="pageFilter"
+                            class="btn btn-outline-secondary textnowrap"
+                            data-bs-toggle="modal"
+                            data-bs-target="#pageFilterModal"
+                        >
+                            url filter
+                        </button>
+                    </div>
                 </div>
 
                 <div class="btn-group" role="group">

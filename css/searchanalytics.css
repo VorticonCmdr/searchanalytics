@@ -17,16 +17,22 @@ body {
     width: fit-content;
 }
 .line-class-clicks-last-7-days {
+    stroke-linecap: round;
+    stroke-linejoin: round;
     stroke-dasharray: 4 4;
-    stroke-width: 2;
+    stroke-width: 3;
 }
 .line-class-impressions-last-7-days {
+    stroke-linecap: round;
+    stroke-linejoin: round;
     stroke-dasharray: 4 4;
-    stroke-width: 2;
+    stroke-width: 3;
 }
 .line-class-ctr-last-7-days {
+    stroke-linecap: round;
+    stroke-linejoin: round;
     stroke-dasharray: 4 4;
-    stroke-width: 2;
+    stroke-width: 3;
 }
 .line-class-incomplete-clicks {
     stroke-dasharray: 2 4;
@@ -45,4 +51,14 @@ body {
 }
 .incomplete td {
     color: #696969;
+}
+.textnowrap {
+    text-wrap-mode: nowrap;
+}
+#property {
+    width: fit-content;
+}
+.fixed-table-toolbar {
+    padding-left: 1rem;
+    padding-right: 0.5rem;
 }
