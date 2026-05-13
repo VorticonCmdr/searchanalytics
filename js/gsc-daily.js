@@ -519,6 +519,14 @@ async function setClipboard(text) {
   const blob = new Blob([text], { type });
   const data = [new ClipboardItem({ [type]: blob })];
   await navigator.clipboard.write(data);
+
+  const $badge = $("#action-badge");
+  $badge.removeClass("d-none").addClass("visible");
+  setTimeout(() => {
+    $badge
+      .removeClass("visible")
+      .one("transitionend", () => $badge.addClass("d-none"));
+  }, 1000);
 }
 
 function getNestedProperty(obj, path) {
@@ -638,9 +646,10 @@ function eventsTableButtons() {
 let hoursColumns = [
   {
     field: "timestamp",
-    title: "timestamp",
+    title: "date",
     sortable: true,
-    visible: false,
+    visible: true,
+    formatter: copyFormatter,
     searchable: false,
     align: "right",
   },
@@ -711,6 +720,7 @@ let pagesColumns = [
     visible: true,
     searchable: true,
     align: "left",
+    formatter: urlFormatter,
   },
   {
     field: "clicks",
@@ -826,6 +836,20 @@ function generateFilename(name) {
   return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
 }
 
+function copyFormatter(value, row) {
+  return `${value}<button
+    data-copy="${value}"
+    class="action-icon clipboard-icon btn btn-transparent float-end"
+  ></button>`;
+}
+
+function urlFormatter(value, row) {
+  return `${value}<button
+    data-url="${value}"
+    class="action-icon clipboard-icon btn btn-transparent float-end"
+  ></button>`;
+}
+
 async function generateEventsTable() {
   $eventsTable.bootstrapTable({
     toolbar: "#eventstable-toolbar",
@@ -892,6 +916,14 @@ function processEvents(rows, checked) {
   });
 }
 
+function rowStylePages(row, index) {
+  let classes = ["action-link"];
+
+  return {
+    classes: classes.join(" "),
+  };
+}
+
 async function generatePagesTable() {
   $pagesTable.bootstrapTable({
     toolbar: "#pagestable-toolbar",
@@ -908,6 +940,7 @@ async function generatePagesTable() {
     showColumns: true,
     exportTypes: ["csv"],
     showExport: true,
+    rowStyle: rowStylePages,
     exportOptions: {
       fileName: function () {
         return generateFilename("pages");
@@ -919,12 +952,9 @@ async function generatePagesTable() {
 }
 
 function rowStyle(row, index) {
-  if (row.incomplete) {
-    return {
-      classes: "incomplete",
-    };
-  }
-  return {};
+  const classes = ["action-link"];
+  if (row.incomplete) classes.push("incomplete");
+  return { classes: classes.join(" ") };
 }
 
 async function generateHoursTable() {
@@ -1303,6 +1333,11 @@ async function init() {
       },
     ]);
     saveEvents();
+  });
+
+  $(document).on("click", ".clipboard-icon", function () {
+    let text = $(this).data("url") ?? $(this).data("copy");
+    setClipboard(text);
   });
 
   $propertyBtn.on("click", function () {
