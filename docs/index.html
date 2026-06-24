@@ -122,28 +122,6 @@
       box-shadow: 0 30px 80px rgba(0,0,0,.5);
       border: 1px solid rgba(255,255,255,.08);
     }
-    .screenshot-placeholder {
-      width: 100%;
-      aspect-ratio: 16/9;
-      background: rgba(255,255,255,.05);
-      border: 2px dashed rgba(255,255,255,.2);
-      border-radius: var(--radius);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: rgba(255,255,255,.4);
-      font-size: .9rem;
-      gap: .5rem;
-    }
-    .screenshot-placeholder .filename {
-      font-family: monospace;
-      font-size: .8rem;
-      background: rgba(255,255,255,.08);
-      padding: .2rem .6rem;
-      border-radius: 4px;
-    }
-
     /* ── Features strip ── */
     .features {
       background: var(--gray);
@@ -230,37 +208,9 @@
       border: 1px solid var(--border);
       box-shadow: 0 8px 30px rgba(0,0,0,.1);
     }
-    .showcase-img .screenshot-placeholder {
-      background: var(--gray);
-      border-color: var(--border);
-      color: var(--muted);
-      aspect-ratio: 4/3;
-    }
-    .showcase-img .screenshot-placeholder .filename { background: rgba(0,0,0,.06); color: var(--text); }
-
     @media (max-width: 768px) {
       .showcase-item,
       .showcase-item.reverse { grid-template-columns: 1fr; direction: ltr; }
-    }
-
-    /* ── Dark mode note ── */
-    .darkmode-strip {
-      background: var(--dark);
-      color: #fff;
-      padding: 4rem 2rem;
-      text-align: center;
-    }
-    .darkmode-strip h2 { font-size: 1.6rem; font-weight: 800; margin-bottom: .75rem; }
-    .darkmode-strip p  { color: rgba(255,255,255,.65); max-width: 480px; margin: 0 auto 2rem; }
-    .darkmode-screenshot {
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    .darkmode-screenshot img { width: 100%; border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
-    .darkmode-screenshot .screenshot-placeholder {
-      aspect-ratio: 16/9;
-      border-color: rgba(255,255,255,.2);
-      background: rgba(255,255,255,.04);
     }
 
     /* ── CTA ── */
@@ -327,16 +277,9 @@
     </a>
   </div>
 
-  <!-- Hero screenshot placeholder -->
+  <!-- Hero screenshot -->
   <div class="hero-screenshot">
-    <div class="screenshot-placeholder">
-      <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 20.25h18M3.75 4.5h16.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75V5.25a.75.75 0 01.75-.75z" /></svg>
-      Screenshot: Main view (property by hour) with chart and data loaded
-      <span class="filename">screenshots/screenshot-main.png</span>
-    </div>
-    <!-- Once you have the screenshot, replace the div above with:
     <img src="screenshots/screenshot-main.png" alt="Search Analytics Alternative – Main View" />
-    -->
   </div>
 </section>
 
@@ -396,12 +339,7 @@
       </ul>
     </div>
     <div class="showcase-img">
-      <div class="screenshot-placeholder">
-        <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 20.25h18M3.75 4.5h16.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75V5.25a.75.75 0 01.75-.75z" /></svg>
-        Chart close-up showing last 7 days vs previous period
-        <span class="filename">screenshots/screenshot-chart.png</span>
-      </div>
-      <!-- Replace with: <img src="screenshots/screenshot-chart.png" alt="Week-over-week hourly chart" /> -->
+      <img src="screenshots/screenshot-chart.png" alt="Week-over-week hourly chart" />
     </div>
   </div>
 
@@ -418,12 +356,7 @@
       </ul>
     </div>
     <div class="showcase-img">
-      <div class="screenshot-placeholder">
-        <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 20.25h18M3.75 4.5h16.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75V5.25a.75.75 0 01.75-.75z" /></svg>
-        Pages tab with URL list, clicks, impressions
-        <span class="filename">screenshots/screenshot-pages.png</span>
-      </div>
-      <!-- Replace with: <img src="screenshots/screenshot-pages.png" alt="Pages tab with URL performance" /> -->
+      <img src="screenshots/screenshot-pages.png" alt="Pages tab with URL performance" />
     </div>
   </div>
 
@@ -431,38 +364,36 @@
   <div class="showcase-item">
     <div class="showcase-text">
       <h2>Property by day — longer-range view</h2>
-      <p>Switch to the Days view for monthly or daily trend analysis. An events system lets you annotate your chart with deploys, algorithm updates, or content changes.</p>
+      <p>Switch to the Days view for monthly or daily trend analysis across your entire data history. Toggle between month and day granularity depending on the timeframe you need.</p>
       <ul>
         <li>Toggle between day and month granularity</li>
-        <li>Add named events with date ranges — they appear as chart annotations</li>
-        <li>Events stored locally via Chrome storage — no server required</li>
-        <li>Filter by "this property" or show events across all properties</li>
+        <li>Same URL filter and property selector as the hourly view</li>
+        <li>CSV and Google Sheets clipboard export</li>
       </ul>
     </div>
     <div class="showcase-img">
-      <div class="screenshot-placeholder">
-        <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3 20.25h18M3.75 4.5h16.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H3.75a.75.75 0 01-.75-.75V5.25a.75.75 0 01.75-.75z" /></svg>
-        Days / months view with chart and data table
-        <span class="filename">screenshots/screenshot-days.png</span>
-      </div>
-      <!-- Replace with: <img src="screenshots/screenshot-days.png" alt="Property by day view" /> -->
+      <img src="screenshots/screenshot-days.png" alt="Property by day view" />
     </div>
   </div>
 
-</section>
-
-<!-- ── Dark mode ── -->
-<section class="darkmode-strip">
-  <h2>Dark mode included</h2>
-  <p>Automatically follows your OS appearance setting. The chart theme switches alongside the UI — no toggle needed.</p>
-  <div class="darkmode-screenshot">
-    <div class="screenshot-placeholder">
-      <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>
-      Dark mode — any view with OS dark mode active
-      <span class="filename">screenshots/screenshot-dark.png</span>
+  <!-- View 4: Events -->
+  <div class="showcase-item reverse">
+    <div class="showcase-text">
+      <h2>Annotate your chart with events</h2>
+      <p>The Days view includes a built-in events system. Mark deploys, algorithm updates, content changes, or anything else directly on the chart so you can correlate traffic shifts with what actually happened.</p>
+      <ul>
+        <li>Point events and date-range events — both appear as chart annotations</li>
+        <li>Color-coded: checked events in pink, unchecked in gray</li>
+        <li>Categorise events (deploy, update, issue, or custom)</li>
+        <li>Scope events to a single property or show them across all properties</li>
+        <li>Stored locally in Chrome storage — no account, no server</li>
+      </ul>
     </div>
-    <!-- Replace with: <img src="screenshots/screenshot-dark.png" alt="Dark mode" /> -->
+    <div class="showcase-img">
+      <img src="screenshots/screenshot-events.png" alt="Chart event annotations" />
+    </div>
   </div>
+
 </section>
 
 <!-- ── CTA ── -->
