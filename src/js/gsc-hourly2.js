@@ -1,3 +1,15 @@
+import $ from 'jquery';
+import * as bootstrap from 'bootstrap';
+import bb from 'billboard.js';
+import 'd3';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap-icons/font/bootstrap-icons.min.css';
+import 'bootstrap-table/dist/bootstrap-table.min.css';
+import '../css/searchanalytics.css';
+import 'tableexport.jquery.plugin';
+import 'bootstrap-table';
+import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
+
 let currentURL = new URL(document.location);
 
 let settings = {
@@ -10,6 +22,10 @@ let settings = {
   },
   siteUrl: currentURL.searchParams.get("property") || null,
   page: currentURL.searchParams.get("page") || null,
+  timeseries: ["x"],
+  pages: [],
+  selectedPages: [],
+  metric: currentURL.searchParams.get("metric") || "clicks",
 };
 
 const authorizeButton = document.getElementById("authorize_button");
@@ -159,8 +175,8 @@ async function getPages() {
     dataState: "HOURLY_ALL",
     type: settings.type,
     rowLimit: 10000,
-    startDate: new Date(settings.from).toISOString().slice(0, 10),
-    endDate: new Date(settings.to).toISOString().slice(0, 10),
+    startDate: `${new Date(settings.from).getFullYear()}-01-01`,
+    endDate: `${new Date(settings.to).getFullYear()}-12-31`,
     startRow: 0,
     dimensions: ["HOUR", "PAGE"],
     dimensionFilterGroups: [{ filters: assemblePageFilters() }],
@@ -187,37 +203,22 @@ async function getPages() {
 
     const data = await response.json();
 
-    let firstClicks = {};
+    if (!data.rows) {
+      $pagesTable.bootstrapTable("hideLoading");
+      return;
+    }
+    settings.pages = data?.rows?.map((d) => {
+      return {
+        timestamp: new Date(d?.keys?.[0]).getTime(),
+        page: d?.keys?.[1],
+        clicks: d?.clicks,
+        impressions: d?.impressions,
+        ctr: d?.ctr,
+      };
+    });
 
-    let pages = data.rows
-      .map((d) => {
-        let ts = new Date(d?.keys?.[0]).getTime();
-        let page = d?.keys?.[1];
-        if (!firstClicks[page]) {
-          firstClicks[page] = ts;
-        }
-        if (ts < firstClicks[page]) {
-          firstClicks[page] = ts;
-        }
-        return d;
-      })
-      .filter(
-        (d) =>
-          new Date(d?.keys?.[0]).getTime() >= settings.from &&
-          new Date(d?.keys?.[0]).getTime() <= settings.to,
-      )
-      .map((d) => {
-        let page = d?.keys?.[1];
-        return {
-          timestamp: firstClicks[page],
-          page: page,
-          clicks: d?.clicks,
-          impressions: d?.impressions,
-          ctr: d?.ctr,
-        };
-      });
+    let { aggregatedPages } = aggregateByUrl(settings.pages);
 
-    let aggregatedPages = aggregateByUrl(pages);
     $pagesTable
       .bootstrapTable("load", aggregatedPages)
       .bootstrapTable("hideLoading");
@@ -226,8 +227,50 @@ async function getPages() {
   }
 }
 
+function drawSelections() {
+  let data = $pagesTable.bootstrapTable("getSelections");
+  settings.selectedPages = data.map((d) => d.page);
+
+  let chartData = {
+    columns: [],
+  };
+  data.forEach((d) => {
+    let series = generatePageLine(d.page, settings.metric);
+    chartData.columns.push(series);
+  });
+  chart.load(chartData);
+  colorTable();
+
+  generateNewHoursTable();
+}
+
+function generateNewHoursTable() {
+  let filteredPages = settings.pages.filter(
+    (d) => settings.selectedPages.indexOf(d.page) > -1,
+  );
+  let pivotHours = pivotByTimestamp(filteredPages, settings.metric);
+  console.log(pivotHours);
+  generateNewHoursTableColumns();
+  $hoursTable.bootstrapTable("destroy");
+  generateHoursTable();
+  $hoursTable.bootstrapTable("load", pivotHours);
+}
+
+function generatePageLine(page, key) {
+  let timeseries = Array(settings.timeseries.length).fill(null);
+  timeseries[0] = page;
+  settings.pages
+    .filter((d) => d.page == page)
+    .forEach((d) => {
+      let index = settings.timeseries.indexOf(d.timestamp);
+      timeseries[index] = d[key];
+    });
+  return timeseries;
+}
+
 function aggregateByUrl(rows) {
   const agg = {};
+  const ts = new Date().getTime();
 
   rows.forEach((row) => {
     const url = row.page;
@@ -238,7 +281,7 @@ function aggregateByUrl(rows) {
         impressions: 0,
         ctrSum: 0,
         count: 0,
-        timestamp: 0,
+        timestamp: ts,
       };
     }
 
@@ -246,16 +289,20 @@ function aggregateByUrl(rows) {
     agg[url].impressions += row.impressions;
     agg[url].ctrSum += row.ctr;
     agg[url].count += 1;
-    agg[url].timestamp = row.timestamp;
+    agg[url].timestamp =
+      row.timestamp < agg[url].timestamp ? row.timestamp : agg[url].timestamp;
   });
 
-  return Object.values(agg).map((entry) => ({
+  let aggregatedPages = Object.values(agg).map((entry) => ({
     timestamp: entry.timestamp,
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
     ctr: entry.ctrSum / entry.count,
   }));
+  return {
+    aggregatedPages,
+  };
 }
 
 async function getTimeline() {
@@ -311,6 +358,10 @@ async function getTimeline() {
       firstIncompleteHourTs = new Date(firstIncompleteHour).getTime();
     }
 
+    if (!data.rows) {
+      $hoursTable.bootstrapTable("hideLoading");
+      return;
+    }
     const timeline = data.rows.map((d) => {
       let ts = new Date(d?.keys?.[0]).getTime();
       return {
@@ -324,6 +375,7 @@ async function getTimeline() {
     $hoursTable.bootstrapTable("load", timeline).bootstrapTable("hideLoading");
 
     let chartData = generateHourlyGraphData(data);
+    settings.timeseries = chartData.timeseries;
     drawChart(chartData);
   } catch (err) {
     console.error(`Error: ${err.message}`);
@@ -336,11 +388,6 @@ function generateHourlyGraphData(data) {
   if (data?.metadata?.firstIncompleteHour) {
     firstIncompleteHour = new Date(data.metadata.firstIncompleteHour).getTime();
   }
-  let lastIncompleteHour = 0;
-  let startLast7Days = Infinity;
-  let endLast7Days = 0;
-  let startPrev7Days = Infinity;
-  let endPrev7Days = 0;
 
   const dataMapClicks = new Map();
   const dataMapImpressions = new Map();
@@ -369,43 +416,32 @@ function generateHourlyGraphData(data) {
   const mostRecent = new Date(mostRecentStr);
   mostRecent.setDate(mostRecent.getDate() + 1);
   mostRecent.setHours(0, 0, 0, 0);
-  endLast7Days = mostRecent.getTime();
 
   // Calculate start time: 7 days before, at 00:00
   const start = new Date(mostRecent);
-  start.setDate(start.getDate() - 7);
+  start.setDate(start.getDate() - 10);
   start.setHours(0, 0, 0, 0);
-  startLast7Days = start.getTime();
 
   const timeseries = ["x"];
   const clicksLast7Days = ["clicks last 7 days"];
   const clicksIncomplete = ["incomplete clicks"];
-  const clicksPrev7Days = ["clicks before"];
   const impressionsLast7Days = ["impressions last 7 days"];
   const impressionsIncomplete = ["incomplete impressions"];
-  const impressionsPrev7Days = ["impressions before"];
   const ctrLast7Days = ["ctr last 7 days"];
   const ctrIncomplete = ["incomplete ctr"];
-  const ctrPrev7Days = ["ctr before"];
 
   const MS_PER_HOUR = 60 * 60 * 1000;
 
-  for (let i = 0; i < 24 * 7; i++) {
+  for (let i = 0; i < 24 * 10; i++) {
     const ts = start.getTime() + i * MS_PER_HOUR;
-    const tsPrev = ts - 7 * 24 * MS_PER_HOUR;
 
     let ctr = (dataMapCtr.get(ts) / dataMapCtrMax) * dataMapImpressionsMax;
-    let ctrPrev =
-      (dataMapCtr.get(tsPrev) / dataMapCtrMax) * dataMapImpressionsMax;
 
     timeseries.push(ts);
     if (ts >= firstIncompleteHour) {
       clicksIncomplete.push(dataMapClicks.get(ts) ?? null);
       impressionsIncomplete.push(dataMapImpressions.get(ts) ?? null);
       ctrIncomplete.push(ctr ?? null);
-      if (dataMapClicks.get(ts) + dataMapImpressions.get(ts)) {
-        lastIncompleteHour = ts + MS_PER_HOUR;
-      }
 
       clicksLast7Days.push(null);
       impressionsLast7Days.push(null);
@@ -415,10 +451,6 @@ function generateHourlyGraphData(data) {
         clicksIncomplete.push(dataMapClicks.get(ts) ?? null);
         impressionsIncomplete.push(dataMapImpressions.get(ts) ?? null);
         ctrIncomplete.push(ctr ?? null);
-
-        if (dataMapClicks.get(ts) + dataMapImpressions.get(ts)) {
-          lastIncompleteHour = ts + MS_PER_HOUR;
-        }
       } else {
         clicksIncomplete.push(null);
         impressionsIncomplete.push(null);
@@ -429,43 +461,19 @@ function generateHourlyGraphData(data) {
       impressionsLast7Days.push(dataMapImpressions.get(ts) ?? null);
       ctrLast7Days.push(ctr ?? null);
     }
-
-    clicksPrev7Days.push(dataMapClicks.get(tsPrev) ?? null);
-    impressionsPrev7Days.push(dataMapImpressions.get(tsPrev) ?? null);
-    ctrPrev7Days.push(ctrPrev ?? null);
-
-    if (dataMapClicks.get(tsPrev) + dataMapImpressions.get(tsPrev)) {
-      if (tsPrev < startPrev7Days) {
-        startPrev7Days = tsPrev;
-      }
-      if (tsPrev > endPrev7Days) {
-        endPrev7Days = tsPrev;
-      }
-    }
   }
-
-  console.log(startPrev7Days, endPrev7Days);
 
   return {
     timeseries,
     clicksLast7Days,
-    clicksPrev7Days,
     clicksIncomplete,
     impressionsLast7Days,
-    impressionsPrev7Days,
     impressionsIncomplete,
     ctrLast7Days,
-    ctrPrev7Days,
     ctrIncomplete,
     dataMapImpressionsMax,
     dataMapCtrMax,
     dataMapCtr,
-    startLast7Days,
-    endLast7Days,
-    firstIncompleteHour,
-    lastIncompleteHour,
-    startPrev7Days,
-    endPrev7Days,
   };
 }
 
@@ -479,51 +487,33 @@ function clearChart() {
   }
 }
 
+function colorTable() {
+  let colors = chart.data.colors();
+  Object.keys(colors).forEach((key) => {
+    $(`[data-page="${key}"]`).val(colors[key]);
+  });
+}
+
 function drawChart(chartData) {
   let columns = [];
   let colors = {
     "clicks last 7 days": "#4285f4",
     "incomplete clicks": "#4285f4",
-    "clicks before": "#4285f4",
-    "impressions last 7 days": "#5e35b1",
-    "incomplete impressions": "#5e35b1",
-    "impressions before": "#5e35b1",
-    "ctr last 7 days": "#00897b",
-    "incomplete ctr": "#00897b",
-    "ctr before": "#00897b",
   };
 
   columns.push(chartData.timeseries);
   columns.push(chartData.clicksLast7Days);
   columns.push(chartData.clicksIncomplete);
-  columns.push(chartData.clicksPrev7Days);
-  columns.push(chartData.impressionsLast7Days);
-  columns.push(chartData.impressionsIncomplete);
-  columns.push(chartData.impressionsPrev7Days);
-  columns.push(chartData.ctrLast7Days);
-  columns.push(chartData.ctrIncomplete);
-  columns.push(chartData.ctrPrev7Days);
 
   let ctrSet = new Set(["ctr last 7 days", "ctr before", "incomplete ctr"]);
 
-  const MS_BEFORE = 7 * 24 * 60 * 60 * 1000;
   clearChart();
   chart = bb.generate({
     point: {
       show: false,
     },
     line: {
-      classes: [
-        "line-class-clicks-before",
-        "line-class-incomplete-clicks",
-        "line-class-clicks-last-7-days",
-        "line-class-impressions-before",
-        "line-class-incomplete-impressions",
-        "line-class-impressions-last-7-days",
-        "line-class-ctr-before",
-        "line-class-incomplete-ctr",
-        "line-class-ctr-last-7-days",
-      ],
+      classes: [],
     },
     bindto: "#chart",
     padding: {
@@ -536,48 +526,21 @@ function drawChart(chartData) {
       colors: colors,
       order: "desc",
       type: "line",
-      names: {
-        "clicks last 7 days": `clicks ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
-        "incomplete clicks": `incomplete clicks ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
-        "clicks before": `clicks ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
-        "impressions last 7 days": `impressions ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
-        "incomplete impressions": `incomplete impressions ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
-        "impressions before": `incomplete impressions ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
-        "ctr last 7 days": `ctr ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
-        "incomplete ctr": `incomplete ctr ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
-        "ctr before": `ctr ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
-      },
-      axes: {
-        "impressions last 7 days": "y2",
-        "impressions before": "y2",
-        "incomplete impressions": "y2",
-        "ctr last 7 days": "y2",
-        "ctr before": "y2",
-        "incomplete ctr": "y2",
-      },
+      axes: {},
       hide: [
+        "clicks last 7 days",
+        "incomplete clicks",
         "impressions last 7 days",
-        "impressions before",
         "incomplete impressions",
         "ctr last 7 days",
-        "ctr before",
         "incomplete ctr",
       ],
     },
+    legend: {
+      show: false,
+    },
     tooltip: {
       format: {
-        name: function (name, ratio, id, index) {
-          let metric = name?.split(" ")?.[0] || name;
-          let part2 = name?.split(" ")?.[1] || name;
-          let date = dayFormat(chartData.timeseries[index]);
-          if (metric == "incomplete") {
-            metric = `incomplete ${part2}`;
-          }
-          if (part2 == "before") {
-            date = dayFormat(chartData.timeseries[index] - MS_BEFORE);
-          }
-          return `${metric} ${date}`;
-        },
         value: function (value, ratio, id, index) {
           if (ctrSet.has(id)) {
             let ts = chartData.timeseries[index + 1];
@@ -587,16 +550,13 @@ function drawChart(chartData) {
           return parseFloat(value).toLocaleString();
         },
         title: function (x) {
-          let d = new Date(x).getTime();
-          let from = timeWeekdayFormat(d);
-          let to = timeFormat(d + 60 * 60 * 1000);
-          return `${from} - ${to}`;
+          return dateFormat(x);
         },
       },
     },
     axis: {
       y: {
-        label: "clicks",
+        label: settings.metric,
         padding: {
           top: 0,
           bottom: 0,
@@ -610,21 +570,7 @@ function drawChart(chartData) {
           },
         },
       },
-      y2: {
-        label: "impressions",
-        padding: {
-          top: 0,
-          bottom: 0,
-        },
-        min: 0,
-        show: true,
-        tick: {
-          fit: true,
-          format: function (d) {
-            return d.toLocaleString();
-          },
-        },
-      },
+      y2: {},
       x: {
         label: "by hour",
         padding: {
@@ -640,25 +586,22 @@ function drawChart(chartData) {
       },
     },
   });
-
-  chart.regions.add({
-    axis: "x",
-    start: settings.from,
-    end: settings.to,
-    class: "regionCut",
-    label: {
-      text: `${dateWeekdayFormat(settings.from)}`,
-      x: 5,
-      y: 4,
-    },
-  });
 }
 
-async function setClipboard(text) {
+async function setClipboard(text, message) {
   const type = "text/plain";
   const blob = new Blob([text], { type });
   const data = [new ClipboardItem({ [type]: blob })];
   await navigator.clipboard.write(data);
+
+  const $badge = $("#action-badge");
+  $badge.text(message);
+  $badge.removeClass("d-none").addClass("visible");
+  setTimeout(() => {
+    $badge
+      .removeClass("visible")
+      .one("transitionend", () => $badge.addClass("d-none"));
+  }, 1000);
 }
 
 function getNestedProperty(obj, path) {
@@ -670,6 +613,7 @@ function filterVisibleColumns(selections, columns) {
   // Create a mapping of field paths to titles for visible columns
   const columnMap = columns
     .filter((column) => column.visible)
+    .filter((column) => !column.suppressExport)
     .reduce((map, column) => {
       map[column.field] = column.title;
       return map;
@@ -696,7 +640,11 @@ function getGSheetClipboard(table) {
   let formatters = [];
   let output = table.columns
     .map((col) => {
-      formatters.push(col.formatter);
+      if (col.suppressFormatterExport) {
+        formatters.push(undefined);
+      } else {
+        formatters.push(col.formatter);
+      }
       if (col.visible) {
         return col.title;
       }
@@ -722,12 +670,23 @@ function getGSheetClipboard(table) {
 
 function tableButtons() {
   return {
+    btnPaintCharts: {
+      text: "paint chart",
+      icon: "bi-graph-up",
+      event: function () {
+        drawSelections();
+        $pagesTable.bootstrapTable("uncheckAll");
+      },
+      attributes: {
+        title: "draw selected pages on graph",
+      },
+    },
     btnGSheetClipboard: {
       text: "sheets clipboard",
       icon: "bi-file-spreadsheet",
       event: function () {
         let text = getGSheetClipboard(this);
-        setClipboard(text);
+        setClipboard(text, "table copied to clipboard");
       },
       attributes: {
         title: "copy selected rows for google sheets",
@@ -736,107 +695,24 @@ function tableButtons() {
   };
 }
 
-function rowStyle(row, index) {
+function rowStylePages(row, index) {
+  let classes = ["action-link"];
+
+  return {
+    classes: classes.join(" "),
+  };
+}
+
+function rowStyleHours(row, index) {
+  let classes = [];
+
   if (row.incomplete) {
-    return {
-      classes: "incomplete",
-    };
+    classes.push("incomplete");
   }
-  return {};
-}
 
-let datetimeFormat = new Intl.DateTimeFormat("default", {
-  year: "2-digit",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-function dateFormat(value) {
-  if (!value) return undefined;
-
-  return datetimeFormat.format(new Date(Number(value)));
-}
-
-let dateWeekdayFormatter = new Intl.DateTimeFormat("default", {
-  weekday: "long",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-function dateWeekdayFormat(value) {
-  if (!value) return undefined;
-
-  return dateWeekdayFormatter.format(new Date(Number(value)));
-}
-
-let hourWeekdayFormat = new Intl.DateTimeFormat("default", {
-  weekday: "long",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-function timeWeekdayFormat(value) {
-  if (!value) return undefined;
-
-  return hourWeekdayFormat.format(new Date(Number(value)));
-}
-
-let hourFormat = new Intl.DateTimeFormat("default", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
-function timeFormat(value) {
-  if (!value) return undefined;
-
-  return hourFormat.format(new Date(Number(value)));
-}
-
-let dateonlyFormat = new Intl.DateTimeFormat("default", {
-  year: "2-digit",
-  month: "2-digit",
-  day: "2-digit",
-});
-function dayFormat(value) {
-  if (!value) return undefined;
-
-  try {
-    return dateonlyFormat.format(new Date(Number(value)));
-  } catch (e) {
-    return "";
-  }
-}
-
-let dayonlyFormatter = new Intl.DateTimeFormat("default", {
-  month: "2-digit",
-  day: "2-digit",
-});
-function dayOnlyFormat(value) {
-  if (!value) return undefined;
-
-  try {
-    return dayonlyFormatter.format(new Date(Number(value)));
-  } catch (e) {
-    return "";
-  }
-}
-
-function toLocaleString(value) {
-  if (!value) return "";
-  let d = new Date(Number(value));
-  return d.toLocaleString();
-}
-
-function getLocalISOStringSlice(ts) {
-  const now = new Date(ts);
-  const offset = now.getTimezoneOffset(); // in minutes
-  const localTime = new Date(now.getTime() - offset * 60000);
-  return localTime.toISOString().slice(0, 16);
-}
-
-function ctrFormat(value) {
-  const num = Number(value);
-  if (!isFinite(num) || num === 0) return "0.0%";
-  return `${(num * 100).toFixed(1)}%`;
+  return {
+    classes: classes.join(" "),
+  };
 }
 
 let hoursColumns = [
@@ -886,12 +762,30 @@ let hoursColumns = [
 
 let pagesColumns = [
   {
+    checkbox: true,
+    sortable: false,
+    visible: true,
+    searchable: false,
+  },
+  {
+    field: "color",
+    title: "color",
+    sortable: false,
+    visible: true,
+    searchable: false,
+    align: "center",
+    formatter: colorFormatter,
+    suppressExport: true,
+  },
+  {
     field: "page",
     title: "page",
     sortable: false,
     visible: true,
     searchable: true,
     align: "left",
+    formatter: urlFormatter,
+    suppressFormatterExport: true,
   },
   {
     field: "clicks",
@@ -920,14 +814,51 @@ let pagesColumns = [
   },
   {
     field: "timestamp",
-    title: "first impression",
+    title: "first hour",
     formatter: dateFormat,
     sortable: true,
-    visible: false,
+    visible: true,
     searchable: true,
     align: "right",
   },
 ];
+
+function colorFormatter(value, row) {
+  return `<input type="color" data-page="${row?.page}" value="#ffffff" class="graphColors form-control form-control-sm">`;
+}
+
+let dtf = new Intl.DateTimeFormat("default", {
+  year: "2-digit",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+function dateFormat(value) {
+  if (!value) return undefined;
+
+  return dtf.format(new Date(Number(value)));
+}
+
+function toLocaleString(value) {
+  if (!value) return "";
+  let d = new Date(Number(value));
+  return d.toLocaleString();
+}
+
+function getLocalISOStringSlice(ts) {
+  const now = new Date(ts);
+  const offset = now.getTimezoneOffset(); // in minutes
+  const localTime = new Date(now.getTime() - offset * 60000);
+  return localTime.toISOString().slice(0, 16);
+}
+
+function ctrFormat(value) {
+  const num = Number(value);
+  if (!isFinite(num) || num === 0) return "0.0%";
+  return `${(num * 100).toFixed(1)}%`;
+}
 
 function sanitizeFilename(input) {
   const illegalRe = /[\\\/:*?"<>|\x00-\x1F]/g;
@@ -936,6 +867,13 @@ function sanitizeFilename(input) {
 
 function generateFilename(name) {
   return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
+}
+
+function urlFormatter(value, row) {
+  return `${value}<button
+    data-url="${value}"
+    class="action-icon clipboard-icon btn btn-transparent float-end"
+  ></button>`;
 }
 
 async function generatePagesTable() {
@@ -951,6 +889,7 @@ async function generatePagesTable() {
     buttons: tableButtons,
     search: true,
     columns: pagesColumns,
+    rowStyle: rowStylePages,
     showColumns: true,
     exportTypes: ["csv"],
     showExport: true,
@@ -959,8 +898,20 @@ async function generatePagesTable() {
         return generateFilename("pages");
       },
     },
-    sortOrder: "desc",
-    sortName: "clicks",
+    sortOrder: "asc",
+    sortName: "timestamp",
+    onCheck: function (row, $element) {
+      chart.focus(row.page);
+    },
+    onUncheck: function (row, $element) {
+      chart.revert();
+      $pagesTable.bootstrapTable("getSelections").forEach((row) => {
+        chart.focus(row.page);
+      });
+    },
+    onCheckAll: function (rowsAfter, rowsBefore) {
+      //console.log(rowsAfter);
+    },
   });
 }
 
@@ -969,9 +920,9 @@ async function generateHoursTable() {
     toolbar: "#hourstable-toolbar",
     uniqueId: "timestamp",
     classes: "table table-hover",
-    rowStyle: rowStyle,
+    rowStyle: rowStyleHours,
     data: [],
-    pageSize: settings.hours,
+    pageSize: 1000,
     showRefresh: false,
     buttons: tableButtons,
     columns: hoursColumns,
@@ -983,9 +934,106 @@ async function generateHoursTable() {
         return generateFilename("timeline");
       },
     },
-    sortOrder: "desc",
+    sortOrder: "asc",
     sortName: "timestamp",
   });
+}
+
+async function generateNewHoursTableColumns() {
+  hoursColumns = [
+    {
+      field: "timestamp",
+      title: "timestamp",
+      formatter: dateFormat,
+      sortable: true,
+      visible: true,
+      searchable: true,
+      align: "right",
+    },
+  ];
+
+  settings.selectedPages.forEach((page) => {
+    hoursColumns.push({
+      field: page,
+      title: page,
+      sortable: false,
+      visible: true,
+      searchable: false,
+      align: "left",
+    });
+  });
+}
+
+/**
+ * Pivot [{timestamp, page, ...metrics}] into
+ * [{ timestamp, "<page1>": value, "<page2>": value, ... }]
+ *
+ * @param {Array<Object>} data
+ * @param {string} metric                    // e.g. "clicks" | "impressions" | "ctr"
+ * @param {Object} [opts]
+ * @param {*} [opts.fill=null]               // value when a page has no data for a timestamp
+ * @param {'last'|'sum'|'max'|'min'|Function} [opts.aggregate='last'] // combine duplicates
+ * @param {boolean} [opts.sort=true]         // sort timestamps ascending
+ * @param {string} [opts.tsKey='timestamp']  // custom key for timestamp
+ * @param {string} [opts.pageKey='page']     // custom key for page
+ * @param {string[]} [opts.onlyPages]        // restrict to these pages
+ * @returns {Array<Object>}
+ */
+function pivotByTimestamp(data, metric, opts = {}) {
+  if (!Array.isArray(data) || !metric) return [];
+
+  const {
+    fill = null,
+    aggregate = "last",
+    sort = true,
+    tsKey = "timestamp",
+    pageKey = "page",
+    onlyPages,
+  } = opts;
+
+  const combiner =
+    typeof aggregate === "function"
+      ? aggregate
+      : {
+          last: (_, b) => b,
+          sum: (a, b) => (a ?? 0) + (b ?? 0),
+          max: (a, b) => (a == null ? b : b == null ? a : Math.max(a, b)),
+          min: (a, b) => (a == null ? b : b == null ? a : Math.min(a, b)),
+        }[aggregate] || ((_, b) => b);
+
+  const rowsByTs = new Map(); // ts -> row object
+  const pagesSet = new Set(onlyPages || undefined);
+
+  for (const r of data) {
+    const ts = r?.[tsKey];
+    const page = r?.[pageKey];
+    if (ts == null || !page) continue;
+
+    if (!onlyPages || pagesSet.has(page)) {
+      pagesSet.add(page);
+      const val = r?.[metric] ?? null;
+      const row = rowsByTs.get(ts) || { [tsKey]: ts };
+      if (row.hasOwnProperty(page)) {
+        row[page] = combiner(row[page], val);
+      } else {
+        row[page] = val;
+      }
+      rowsByTs.set(ts, row);
+    }
+  }
+
+  const pageList = [...pagesSet];
+  const out = [...rowsByTs.entries()]
+    .sort((a, b) => (sort ? a[0] - b[0] : 0))
+    .map(([_, row]) => {
+      // ensure every page key exists on every row
+      for (const p of pageList) {
+        if (!Object.prototype.hasOwnProperty.call(row, p)) row[p] = fill;
+      }
+      return row;
+    });
+
+  return out;
 }
 
 function addFilter(name, value) {
@@ -1013,9 +1061,9 @@ function removeFilter(name) {
   currentURL = new URL(document.location);
 }
 
-function getYesterday() {
+function getYesterday10() {
   let d = new Date();
-  d.setDate(d.getDate() - 1);
+  d.setDate(d.getDate() - 10);
   let from = d.setHours(0, 0, 0, 0);
   let to = d.setDate(d.getDate() + 1);
   to = to - 1000 * 60 * 60 * 1;
@@ -1094,7 +1142,7 @@ async function init() {
     $("#propertyBtn").text(settings.siteUrl);
   }
 
-  let yesterday = getYesterday();
+  let yesterday = getYesterday10();
   if (!settings.from) {
     settings.from = yesterday.from;
   }
@@ -1144,7 +1192,7 @@ async function init() {
   $("#property").on("change", function () {
     let selectedValue = $(this).val();
     if (!selectedValue) {
-      //console.info("No property selected");
+      console.log("No property selected");
       return;
     }
     if (!settings.properties.includes(selectedValue)) {
@@ -1160,7 +1208,6 @@ async function init() {
     clearChart();
     $pagesTable.bootstrapTable("removeAll");
     $hoursTable.bootstrapTable("removeAll");
-
     settings.siteUrl = selectedValue;
     $("#property").attr("placeholder", settings.siteUrl);
     $("#property").val("");
@@ -1168,6 +1215,14 @@ async function init() {
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
+  });
+
+  $(document).on("change", ".graphColors", function () {
+    const {
+      value: color,
+      dataset: { page },
+    } = this;
+    chart.data.colors({ [page]: color });
   });
 
   $("input[type='datetime-local']").on("change", function () {
@@ -1200,9 +1255,8 @@ async function init() {
         end: settings.to,
         class: "regionCut",
         label: {
-          text: `${dateWeekdayFormat(settings.from)}`,
+          text: "pages",
           x: 5,
-          y: 4,
         },
       });
       getPages();
@@ -1210,7 +1264,7 @@ async function init() {
   });
 
   if (settings.page) {
-    $("#urlFilterMode").val(dimensionsFilterOperators[settings.page[0]]);
+    $("#urlFilterMode").val(settings.page?.[0]);
     $("#floatingPageFilterInput").val(settings.page.slice(1));
 
     $("#pageFilter")
@@ -1246,6 +1300,17 @@ async function init() {
     getPages();
   });
 
+  $("#metric").val(settings.metric);
+  $("#metric").on("change", function () {
+    clearChart();
+    const value = this.value;
+    settings.metric = value;
+    addFilter("metric", value);
+    chart.axis.labels({
+      y: settings.metric,
+    });
+  });
+
   $propertyBtn.on("click", function () {
     $propertyBtn.removeClass("d-block").addClass("d-none");
     $propertyInput.removeClass("d-none").addClass("d-block").focus();
@@ -1255,6 +1320,11 @@ async function init() {
   $propertyInput.on("blur", function () {
     $propertyInput.removeClass("d-block").addClass("d-none");
     $propertyBtn.removeClass("d-none").addClass("d-block");
+  });
+
+  $(document).on("click", ".clipboard-icon", function () {
+    let text = $(this).data("url");
+    setClipboard(text, "page copied to clipboard");
   });
 
   const popoverTriggerList = document.querySelectorAll(

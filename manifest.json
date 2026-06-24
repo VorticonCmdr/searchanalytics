@@ -21,5 +21,9 @@
   "oauth2": {
     "client_id": "410928017212-ci45iriirpfipf8rugbd7qvc94t13qto.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/webmasters.readonly"]
+  },
+  "options_ui": {
+    "page": "/html/options.html",
+    "open_in_tab": true
   }
 }

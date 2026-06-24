@@ -1,3 +1,15 @@
+import $ from 'jquery';
+import * as bootstrap from 'bootstrap';
+import bb from 'billboard.js';
+import 'd3';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import 'bootstrap-icons/font/bootstrap-icons.min.css';
+import 'bootstrap-table/dist/bootstrap-table.min.css';
+import '../css/searchanalytics.css';
+import 'tableexport.jquery.plugin';
+import 'bootstrap-table';
+import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
+
 let currentURL = new URL(document.location);
 
 let settings = {
@@ -1065,6 +1077,11 @@ function addEvents(rows) {
   }
   rows
     .filter((row) => row.property == "all" || row.property == settings.siteUrl)
+    .filter((row) => {
+      if (!settings.from || !settings.to) return true;
+      const eventEnd = row.to && row.to !== row.from ? row.to : row.from;
+      return row.from <= settings.to && eventEnd >= settings.from;
+    })
     .forEach((row) => {
       if (!row.to || row.from == row.to) {
         chart.xgrids.add({ value: row.from, text: row.title, id: row.id });

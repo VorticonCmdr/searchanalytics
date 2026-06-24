@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+    <head>
+        <title>SAa Options</title>
+    </head>
+    <body class="p-4">
+        <div class="container">
+            <h3>Aggregation Settings</h3>
+            <div class="mb-3">
+                <label for="idRegex" class="form-label"
+                    >ID Extraction Regex (Capture Group 1)</label
+                >
+                <input
+                    type="text"
+                    class="form-control"
+                    id="idRegex"
+                    placeholder="/product/([0-9]+)"
+                />
+                <div class="form-text">
+                    If the regex matches, the first capture group will be used
+                    as ID. Otherwise, the full URL is used.
+                </div>
+            </div>
+            <button id="save" class="btn btn-primary">Save Settings</button>
+            <div id="status" class="mt-2"></div>
+        </div>
+        <script type="module" src="/js/options.js"></script>
+    </body>
+</html>

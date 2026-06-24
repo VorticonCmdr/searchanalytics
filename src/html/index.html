@@ -10,14 +10,6 @@
 
         <title>Search Analytics alternative</title>
 
-        <link rel="stylesheet" href="/css/bootstrap.v5.3.min.css" />
-        <link
-            rel="stylesheet"
-            href="/bootstrap-icons-1.8.1/bootstrap-icons.css"
-        />
-        <link rel="stylesheet" href="/css/bootstrap-table.min.v1.24.1.css" />
-        <link rel="stylesheet" href="/css/searchanalytics.css" />
-
         <link
             rel="stylesheet"
             href="/css/billboard.min.css"
@@ -141,7 +133,7 @@
             </div>
         </div>
 
-        <div class="container bg-white py-4 my-4">
+        <div class="container-fluid bg-white py-4 my-4">
             <ul class="nav nav-tabs nav-justified">
                 <li data-id="hours" class="nav-item">
                     <span class="nav-link active text-primary" data-bs-toggle="popover" data-bs-trigger="hover" data-bs-placement="top" data-bs-content="performance by hour within all the available data">hours</span>
@@ -242,16 +234,13 @@
             </div>
         </div>
 
-        <script src="/js/jquery-3.7.1.min.js"></script>
-        <script src="/js/bootstrap.bundle.v5.3.min.js"></script>
+        <span
+            id="action-badge"
+            class="d-none badge text-bg-dark position-sticky bottom-0 start-50 translate-middle"
+            >URL copied to clipboard</span
+        >
 
-        <script src="/js/tableExport.min.v1.33.0.js"></script>
-        <script src="/js/bootstrap-table.min.v1.24.1.js"></script>
-        <script src="/js/bootstrap-table-export.min.v1.24.1.js"></script>
 
-        <script src="/js/d3.v7.8.5.min.js" charset="utf-8"></script>
-        <script src="/js/billboard.min.js"></script>
-
-        <script src="/js/gsc-hourly.js"></script>
+        <script type="module" src="/js/gsc-hourly.js"></script>
     </body>
 </html>

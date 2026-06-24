@@ -10,14 +10,6 @@
 
         <title>Search Analytics alternative</title>
 
-        <link rel="stylesheet" href="/css/bootstrap.v5.3.min.css" />
-        <link
-            rel="stylesheet"
-            href="/bootstrap-icons-1.8.1/bootstrap-icons.css"
-        />
-        <link rel="stylesheet" href="/css/bootstrap-table.min.v1.24.1.css" />
-        <link rel="stylesheet" href="/css/searchanalytics.css" />
-
         <link
             rel="stylesheet"
             href="/css/billboard.min.css"
@@ -34,7 +26,11 @@
         <nav class="navbar navbar-expand-lg bg-white">
             <div class="container-fluid">
                 <div class="dropdown">
-                    <span class="navbar-brand" data-bs-toggle="dropdown" aria-expanded="false">
+                    <span
+                        class="navbar-brand"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                    >
                         <img
                             id="logo"
                             src="/icons/logo-180.png"
@@ -45,11 +41,19 @@
                     </span>
                     <ul class="dropdown-menu">
                         <li>
-                            <a class="dropdown-item" href="/html/index.html">property by hour</a>
+                            <a class="dropdown-item" href="/html/index.html"
+                                >property by hour</a
+                            >
                         </li>
-                        <li><a class="dropdown-item" href="/html/days.html">property by day</a></li>
                         <li>
-                            <a class="dropdown-item active" href="#">pages by hour</a>
+                            <a class="dropdown-item" href="/html/days.html"
+                                >property by day</a
+                            >
+                        </li>
+                        <li>
+                            <a class="dropdown-item active" href="#"
+                                >pages by hour</a
+                            >
                         </li>
                     </ul>
                 </div>
@@ -65,6 +69,13 @@
                         </select>
                     </div>
                     <div>
+                        <select id="metric" class="form-select">
+                            <option value="clicks">Clicks</option>
+                            <option value="impressions">Impressions</option>
+                            <option value="ctr">CTR</option>
+                        </select>
+                    </div>
+                    <div>
                         <button
                             type="button"
                             id="propertyBtn"
@@ -74,7 +85,8 @@
                             data-bs-placement="bottom"
                             data-bs-content="select GSC property here"
                         >
-                            select property <i class="bi bi-caret-down-fill"></i>
+                            select property
+                            <i class="bi bi-caret-down-fill"></i>
                         </button>
                         <input
                             type="search"
@@ -141,13 +153,27 @@
             </div>
         </div>
 
-        <div class="container bg-white py-4 my-4">
+        <div class="container-fluid bg-white py-4 my-4">
             <ul class="nav nav-tabs nav-justified">
                 <li data-id="hours" class="nav-item">
-                    <span class="nav-link text-primary" data-bs-toggle="popover" data-bs-trigger="hover" data-bs-placement="top" data-bs-content="performance by hour within all the available data">hours</span>
+                    <span
+                        class="nav-link text-primary"
+                        data-bs-toggle="popover"
+                        data-bs-trigger="hover"
+                        data-bs-placement="top"
+                        data-bs-content="performance by hour within all the available data"
+                        >hours</span
+                    >
                 </li>
                 <li data-id="pages" class="nav-item">
-                    <span class="nav-link active text-secondary" data-bs-toggle="popover" data-bs-trigger="hover" data-bs-placement="top" data-bs-content="url performance within the selected timeframe">pages</span>
+                    <span
+                        class="nav-link active text-secondary"
+                        data-bs-toggle="popover"
+                        data-bs-trigger="hover"
+                        data-bs-placement="top"
+                        data-bs-content="url performance within the selected timeframe"
+                        >pages</span
+                    >
                 </li>
             </ul>
             <div class="border-start border-end">
@@ -184,9 +210,7 @@
                 </div>
 
                 <div id="pagesTab" class="tab visible">
-                    <div id="pagestable-toolbar" class="row">
-
-                    </div>
+                    <div id="pagestable-toolbar" class="row"></div>
                     <table id="pagestable"></table>
                 </div>
             </div>
@@ -221,40 +245,52 @@
                                 <option value="-">URLs not containing</option>
                                 <option value="=">Exact URL</option>
                                 <option value="!">Not exact URL</option>
-                                <option value="~">Custom (matches regex)</option>
-                                <option value="_">Custom (Doesn't match regex)</option>
+                                <option value="~">
+                                    Custom (matches regex)
+                                </option>
+                                <option value="_">
+                                    Custom (Doesn't match regex)
+                                </option>
                             </select>
                         </div>
                         <div class="form-floating">
-                          <input type="search" class="form-control" id="floatingPageFilterInput" placeholder="https://www.example.com/">
-                          <label for="floatingPageFilterInput">https://www.example.com/</label>
+                            <input
+                                type="search"
+                                class="form-control"
+                                id="floatingPageFilterInput"
+                                placeholder="https://www.example.com/"
+                            />
+                            <label for="floatingPageFilterInput"
+                                >https://www.example.com/</label
+                            >
                         </div>
-                    <div class="modal-footer border border-0">
-                        <button
-                            type="button"
-                            class="btn btn-link btn-light link-underline link-underline-opacity-0 link-underline-opacity-0-hover"
-                            data-bs-dismiss="modal"
-                        >
-                            Cancel
-                        </button>
-                        <button id="applyPageFilter" type="button" class="btn btn-primary">
-                            Apply
-                        </button>
+                        <div class="modal-footer border border-0">
+                            <button
+                                type="button"
+                                class="btn btn-link btn-light link-underline link-underline-opacity-0 link-underline-opacity-0-hover"
+                                data-bs-dismiss="modal"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                id="applyPageFilter"
+                                type="button"
+                                class="btn btn-primary"
+                            >
+                                Apply
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <script src="/js/jquery-3.7.1.min.js"></script>
-        <script src="/js/bootstrap.bundle.v5.3.min.js"></script>
+        <span
+            id="action-badge"
+            class="d-none badge text-bg-dark position-sticky bottom-0 start-50 translate-middle"
+            >URL copied to clipboard</span
+        >
 
-        <script src="/js/tableExport.min.v1.33.0.js"></script>
-        <script src="/js/bootstrap-table.min.v1.24.1.js"></script>
-        <script src="/js/bootstrap-table-export.min.v1.24.1.js"></script>
-
-        <script src="/js/d3.v7.8.5.min.js" charset="utf-8"></script>
-        <script src="/js/billboard.min.js"></script>
-
-        <script src="/js/gsc-hourly2.js"></script>
+        <script type="module" src="/js/gsc-hourly2.js"></script>
     </body>
 </html>

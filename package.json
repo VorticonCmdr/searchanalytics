@@ -1,0 +1,24 @@
+{
+  "name": "searchanalytics",
+  "version": "1.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "billboard.js": "^3.14.0",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.13.1",
+    "bootstrap-table": "^1.24.1",
+    "d3": "^7.9.0",
+    "jquery": "^3.7.1",
+    "tableexport.jquery.plugin": "^1.33.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-inject": "^5.0.5",
+    "vite": "^5.4.0",
+    "vite-plugin-static-copy": "^1.0.0"
+  }
+}
