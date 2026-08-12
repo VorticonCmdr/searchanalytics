@@ -12,11 +12,17 @@ import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
 
 let currentURL = new URL(document.location);
 
+function parseDateParam(value) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 let settings = {
   properties: [],
   type: currentURL.searchParams.get("type") || "discover",
-  from: currentURL.searchParams.get("from") || null,
-  to: currentURL.searchParams.get("to") || null,
+  from: parseDateParam(currentURL.searchParams.get("from")),
+  to: parseDateParam(currentURL.searchParams.get("to")),
   auth: {
     token: null,
   },
@@ -243,16 +249,12 @@ function aggregateById(rows, firstClicks) {
         page: row.originalUrl, // Hier nehmen wir die erste URL als Repräsentanten
         clicks: 0,
         impressions: 0,
-        ctrSum: 0,
-        count: 0,
         timestamp: firstClicks[id],
       };
     }
 
     agg[id].clicks += row.clicks;
     agg[id].impressions += row.impressions;
-    agg[id].ctrSum += row.ctr;
-    agg[id].count += 1;
   });
 
   return Object.values(agg).map((entry) => ({
@@ -260,7 +262,7 @@ function aggregateById(rows, firstClicks) {
     page: entry.page, // Das ist jetzt wieder eine klickbare URL
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions ? entry.clicks / entry.impressions : 0,
     timestamp: entry.timestamp,
   }));
 }
@@ -275,16 +277,12 @@ function aggregateByUrl(rows) {
         url,
         clicks: 0,
         impressions: 0,
-        ctrSum: 0,
-        count: 0,
         timestamp: 0,
       };
     }
 
     agg[url].clicks += row.clicks;
     agg[url].impressions += row.impressions;
-    agg[url].ctrSum += row.ctr;
-    agg[url].count += 1;
     agg[url].timestamp = row.timestamp;
   });
 
@@ -293,7 +291,7 @@ function aggregateByUrl(rows) {
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions ? entry.clicks / entry.impressions : 0,
   }));
 }
 
@@ -997,13 +995,25 @@ function generateFilename(name) {
   return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        ch
+      ],
+  );
+}
+
 function urlFormatter(value, row) {
-  return `${value}<button
-    data-url="${value}"
+  const safeValue = escapeHtml(value);
+  const safeId = escapeHtml(row.id);
+  return `${safeValue}<button
+    data-url="${safeValue}"
     class="action-icon clipboard-icon btn btn-transparent float-end"
   ></button><button
-    data-url="${value}"
-    data-id="${row.id}"
+    data-url="${safeValue}"
+    data-id="${safeId}"
     class="action-icon bi-graph-up btn btn-transparent float-end"
   ></button>`;
 }

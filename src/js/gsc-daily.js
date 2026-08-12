@@ -217,16 +217,12 @@ function aggregateByUrl(rows) {
         url,
         clicks: 0,
         impressions: 0,
-        ctrSum: 0,
-        count: 0,
         timestamp: ts,
       };
     }
 
     agg[url].clicks += row.clicks;
     agg[url].impressions += row.impressions;
-    agg[url].ctrSum += row.ctr;
-    agg[url].count += 1;
     agg[url].timestamp =
       row.timestamp < agg[url].timestamp ? row.timestamp : agg[url].timestamp;
   });
@@ -236,7 +232,7 @@ function aggregateByUrl(rows) {
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions ? entry.clicks / entry.impressions : 0,
   }));
 }
 
@@ -291,7 +287,7 @@ async function getTimeline() {
       timeline: monthlyTL,
       chartData: monthlyCD,
       firstIncompleteHour: firstIncompleteHour,
-    } = transformData(data, (groupBy = settings.groupBy));
+    } = transformData(data, settings.groupBy);
 
     $hoursTable.bootstrapTable("load", monthlyTL).bootstrapTable("hideLoading");
 

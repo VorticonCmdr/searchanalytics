@@ -12,11 +12,17 @@ import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
 
 let currentURL = new URL(document.location);
 
+function parseDateParam(value) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 let settings = {
   properties: [],
   type: currentURL.searchParams.get("type") || "discover",
-  from: currentURL.searchParams.get("from") || null,
-  to: currentURL.searchParams.get("to") || null,
+  from: parseDateParam(currentURL.searchParams.get("from")),
+  to: parseDateParam(currentURL.searchParams.get("to")),
   auth: {
     token: null,
   },
@@ -175,8 +181,8 @@ async function getPages() {
     dataState: "HOURLY_ALL",
     type: settings.type,
     rowLimit: 10000,
-    startDate: `${new Date(settings.from).getFullYear()}-01-01`,
-    endDate: `${new Date(settings.to).getFullYear()}-12-31`,
+    startDate: new Date(settings.from).toISOString().slice(0, 10),
+    endDate: new Date(settings.to).toISOString().slice(0, 10),
     startRow: 0,
     dimensions: ["HOUR", "PAGE"],
     dimensionFilterGroups: [{ filters: assemblePageFilters() }],
@@ -207,15 +213,19 @@ async function getPages() {
       $pagesTable.bootstrapTable("hideLoading");
       return;
     }
-    settings.pages = data?.rows?.map((d) => {
-      return {
-        timestamp: new Date(d?.keys?.[0]).getTime(),
-        page: d?.keys?.[1],
-        clicks: d?.clicks,
-        impressions: d?.impressions,
-        ctr: d?.ctr,
-      };
-    });
+    settings.pages = data.rows
+      .map((d) => {
+        return {
+          timestamp: new Date(d?.keys?.[0]).getTime(),
+          page: d?.keys?.[1],
+          clicks: d?.clicks,
+          impressions: d?.impressions,
+          ctr: d?.ctr,
+        };
+      })
+      .filter(
+        (d) => d.timestamp >= settings.from && d.timestamp <= settings.to,
+      );
 
     let { aggregatedPages } = aggregateByUrl(settings.pages);
 
@@ -279,16 +289,12 @@ function aggregateByUrl(rows) {
         url,
         clicks: 0,
         impressions: 0,
-        ctrSum: 0,
-        count: 0,
         timestamp: ts,
       };
     }
 
     agg[url].clicks += row.clicks;
     agg[url].impressions += row.impressions;
-    agg[url].ctrSum += row.ctr;
-    agg[url].count += 1;
     agg[url].timestamp =
       row.timestamp < agg[url].timestamp ? row.timestamp : agg[url].timestamp;
   });
@@ -298,7 +304,7 @@ function aggregateByUrl(rows) {
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions ? entry.clicks / entry.impressions : 0,
   }));
   return {
     aggregatedPages,
@@ -823,8 +829,18 @@ let pagesColumns = [
   },
 ];
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        ch
+      ],
+  );
+}
+
 function colorFormatter(value, row) {
-  return `<input type="color" data-page="${row?.page}" value="#ffffff" class="graphColors form-control form-control-sm">`;
+  return `<input type="color" data-page="${escapeHtml(row?.page)}" value="#ffffff" class="graphColors form-control form-control-sm">`;
 }
 
 let dtf = new Intl.DateTimeFormat("default", {
@@ -870,8 +886,9 @@ function generateFilename(name) {
 }
 
 function urlFormatter(value, row) {
-  return `${value}<button
-    data-url="${value}"
+  const safeValue = escapeHtml(value);
+  return `${safeValue}<button
+    data-url="${safeValue}"
     class="action-icon clipboard-icon btn btn-transparent float-end"
   ></button>`;
 }
