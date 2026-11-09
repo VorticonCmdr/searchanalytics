@@ -1,22 +1,58 @@
-import $ from 'jquery';
-import * as bootstrap from 'bootstrap';
-import bb from 'billboard.js';
-import 'd3';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import 'bootstrap-icons/font/bootstrap-icons.min.css';
-import 'bootstrap-table/dist/bootstrap-table.min.css';
-import '../css/searchanalytics.css';
-import 'tableexport.jquery.plugin';
-import 'bootstrap-table';
-import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
+import bb, { grid, line, regions } from "billboard.js";
+import {
+  $,
+  bootstrap,
+  MS_PER_DAY,
+  MS_PER_HOUR,
+  addFilter,
+  addFilters,
+  apiError,
+  assemblePageFilters,
+  chartColors,
+  clearError,
+  ctrFormat,
+  escapeHtml,
+  escapeRegex,
+  exportButtons,
+  getLocalISOStringSlice,
+  gscQuery,
+  gscQueryAll,
+  initAuth,
+  initClipboardIcons,
+  initHistory,
+  initKeyboardShortcuts,
+  initPageFilterActions,
+  initPageFilterModal,
+  initPropertyPicker,
+  initRangePresets,
+  initTabs,
+  initViewSwitcher,
+  loadProperties,
+  numberFormat,
+  pageActionButtons,
+  pageFilterFor,
+  parseTimestamp,
+  readSharedUrlState,
+  removeFilter,
+  setClipboard,
+  showChartState,
+  showNotice,
+  showProperty,
+  syncPageFilterUi,
+} from "./common.js";
 
-let currentURL = new URL(document.location);
+// billboard.js v4 ESM: the region (timeframe/event bands) and grid (event lines)
+// APIs are tree-shakable modules that must be registered before bb.generate().
+grid();
+regions();
+
+const currentURL = new URL(document.location);
 
 let settings = {
   properties: [],
   type: currentURL.searchParams.get("type") || "discover",
-  from: currentURL.searchParams.get("from") || null,
-  to: currentURL.searchParams.get("to") || null,
+  from: parseTimestamp(currentURL.searchParams.get("from")),
+  to: parseTimestamp(currentURL.searchParams.get("to")),
   auth: {
     token: null,
   },
@@ -25,145 +61,29 @@ let settings = {
   idRegex: null,
 };
 
-const authorizeButton = document.getElementById("authorize_button");
-const signoutButton = document.getElementById("signout_button");
-const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
-let tokenClient;
-let gapiInited = false;
-let gisInited = false;
+let noticeTimer;
+const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
 let chart;
 
 let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
-let $tabs = $(".tab");
-let $propertyBtn = $("#propertyBtn");
-let $propertyInput = $("#property");
 
-Date.prototype.getISOWeek = function () {
-  // Copy date so we don't modify the original
-  const date = new Date(
-    Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()),
-  );
-  // ISO week day (Monday=1, Sunday=7)
-  const dayNum = date.getUTCDay() || 7;
-  // Set to nearest Thursday: current date + 4 - current day number
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  // Year of the Thursday in question
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  // Calculate full weeks to nearest Thursday
-  const weekNo = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
-  return weekNo;
-};
-
-authorizeButton.onclick = function handleAuthClick() {
-  chrome.identity.getAuthToken({ interactive: true }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      console.error(
-        "Could not get auth token:",
-        chrome.runtime.lastError.message,
-      );
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
-    listSites();
-  });
-};
-
-signoutButton.onclick = function handleSignoutClick() {
-  chrome.identity.clearAllCachedAuthTokens(() => {
-    console.info("Signed out");
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll");
-    $hoursTable.bootstrapTable("removeAll");
-    $("#properties-list").empty();
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-success")
-      .addClass("btn-danger");
-  });
-};
-
-async function listSites() {
-  if (!settings.auth.token) {
-    console.error("No auth token");
-    return;
-  }
-  try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
-
-    settings.properties = [];
-    let selectsHTML = data?.siteEntry
-      ?.map((entry) => {
-        return entry.siteUrl.replace("sc-domain:", "sc-domain://");
-      })
-      ?.sort((a, b) => {
-        try {
-          const urlA = new URL(a);
-          const urlB = new URL(b);
-
-          const hostA = urlA.host.split(".").reverse().join(".");
-          const hostB = urlB.host.split(".").reverse().join(".");
-
-          if (hostA < hostB) return -1;
-          if (hostA > hostB) return 1;
-
-          const pathA = urlA.pathname.toLowerCase();
-          const pathB = urlB.pathname.toLowerCase();
-
-          if (pathA < pathB) return -1;
-          if (pathA > pathB) return 1;
-
-          return 0;
-        } catch (e) {
-          console.error("Invalid URL", a, b);
-          return 0;
-        }
-      })
-      ?.map((data) => {
-        let property = data.replace("sc-domain://", "sc-domain:");
-        if (settings.property == property) {
-          $("#property").val(settings.property);
-          getTimeline(settings.property);
-        }
-        settings.properties.push(property);
-        return `<option value="${property}"></option>`;
-      })
-      .join("\n");
-
-    $("#properties-list").html(selectsHTML);
-  } catch (err) {
-    console.error(`Error: ${err.message}`);
-  }
+function listSites() {
+  return loadProperties(settings);
 }
 
 async function getPages() {
+  if (!settings.siteUrl) {
+    $pagesTable.bootstrapTable("removeAll").bootstrapTable("hideLoading");
+    return;
+  }
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
 
-  if (!settings.from && !settings.to) {
-    console.error("timeframe not selected");
+  if (!settings.from || !settings.to) {
+    $pagesTable.bootstrapTable("hideLoading");
+    showNotice("Select a timeframe first", 3000);
     return;
   }
 
@@ -172,37 +92,19 @@ async function getPages() {
     dataState: "HOURLY_ALL",
     type: settings.type,
     rowLimit: 25000,
-    startDate: new Date(settings.from).toISOString().slice(0, 10),
-    endDate: new Date(settings.to).toISOString().slice(0, 10),
+    startDate: new Date(settings.from - MS_PER_DAY).toISOString().slice(0, 10),
+    endDate: new Date(settings.to + MS_PER_DAY).toISOString().slice(0, 10),
     startRow: 0,
     dimensions: ["HOUR", "PAGE"],
-    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
+    dimensionFilterGroups: [{ filters: assemblePageFilters(settings.page) }],
   };
 
   try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
+    const data = await gscQuery(settings.siteUrl, settings.auth.token, requestBody);
 
     let firstClicks = {};
 
-    let pages = data.rows
+    let pages = (data.rows ?? [])
       .map((d) => {
         let ts = new Date(d?.keys?.[0]).getTime();
         let originalUrl = d?.keys?.[1];
@@ -228,7 +130,9 @@ async function getPages() {
 
     getFirstImpressions();
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    apiError(err);
+  } finally {
+    $pagesTable.bootstrapTable("hideLoading");
   }
 }
 
@@ -260,7 +164,7 @@ function aggregateById(rows, firstClicks) {
     page: entry.page, // Das ist jetzt wieder eine klickbare URL
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions > 0 ? entry.clicks / entry.impressions : 0,
     timestamp: entry.timestamp,
   }));
 }
@@ -293,11 +197,18 @@ function aggregateByUrl(rows) {
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions > 0 ? entry.clicks / entry.impressions : 0,
   }));
 }
 
 async function getTimeline() {
+  if (!settings.siteUrl) {
+    $hoursTable.bootstrapTable("removeAll").bootstrapTable("hideLoading");
+    showChartState("noProperty");
+    return;
+  }
+  clearError();
+  showChartState("loading");
   $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
   const requestBody = {
     aggregationType: "AUTO",
@@ -308,41 +219,11 @@ async function getTimeline() {
     dataState: "HOURLY_ALL",
     startDate: `${new Date(settings.from).getFullYear()}-01-01`,
     endDate: `${new Date(settings.to).getFullYear()}-12-31`,
-    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
+    dimensionFilterGroups: [{ filters: assemblePageFilters(settings.page) }],
   };
 
   try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
-
-    if (!response.ok) {
-      if (response.status == 401) {
-        console.error(`Unauthorized`);
-        clearChart();
-        $pagesTable.bootstrapTable("removeAll");
-        $hoursTable.bootstrapTable("removeAll");
-        $("#properties-list").empty();
-        $("#auth_dropdown")
-          .removeClass("btn-outline-primary")
-          .removeClass("btn-outline-success")
-          .addClass("btn-outline-danger");
-        return;
-      }
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
+    const data = await gscQuery(settings.siteUrl, settings.auth.token, requestBody);
 
     let firstIncompleteHour = data?.metadata?.firstIncompleteHour;
     let firstIncompleteHourTs = Infinity;
@@ -350,7 +231,7 @@ async function getTimeline() {
       firstIncompleteHourTs = new Date(firstIncompleteHour).getTime();
     }
 
-    const timeline = data.rows.map((d) => {
+    const timeline = (data.rows ?? []).map((d) => {
       let ts = new Date(d?.keys?.[0]).getTime();
       return {
         timestamp: ts,
@@ -362,10 +243,20 @@ async function getTimeline() {
     });
     $hoursTable.bootstrapTable("load", timeline).bootstrapTable("hideLoading");
 
+    if (!data.rows?.length) {
+      clearChart();
+      showChartState("noData");
+      return;
+    }
+
     let chartData = generateHourlyGraphData(data);
     drawChart(chartData);
+    showChartState(null);
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    showChartState("error");
+    apiError(err);
+  } finally {
+    $hoursTable.bootstrapTable("hideLoading");
   }
 }
 
@@ -516,19 +407,54 @@ function clearChart() {
   }
 }
 
+// Each metric has three series: the current week (hero), the previous week shifted
+// onto the same x positions (context), and incomplete hours (provisional).
+const METRICS = ["clicks", "impressions", "ctr"];
+const seriesIds = (metric) => ({
+  current: `${metric} last 7 days`,
+  previous: `${metric} before`,
+  incomplete: `incomplete ${metric}`,
+});
+// Legend entries: current week (also toggles its incomplete hours) and previous week.
+function legendGroup(id) {
+  const metric = METRICS.find((m) => id.includes(m));
+  const ids = seriesIds(metric);
+  return id === ids.previous ? [ids.previous] : [ids.current, ids.incomplete];
+}
+
+// CTR is drawn on the impressions axis, scaled so its maximum meets the impressions
+// maximum. When CTR is the only thing on that axis, the ticks show real CTR values.
+let y2Mode = "impressions";
+function updateY2Axis(hidden, chartData) {
+  const visible = (metric) =>
+    Object.values(seriesIds(metric)).some((id) => !hidden.has(id));
+  const imp = visible("impressions");
+  const ctr = visible("ctr");
+  y2Mode = ctr && !imp ? "ctr" : "impressions";
+  chart.axis.labels({
+    y2: ctr && imp ? "impressions (CTR scaled to fit)" : ctr ? "CTR" : "impressions",
+  });
+  chart.flush();
+}
+function y2Tick(value, chartData) {
+  if (y2Mode === "ctr") {
+    const pct = (value / chartData.dataMapImpressionsMax) * chartData.dataMapCtrMax;
+    return `${pct.toFixed(1)}%`;
+  }
+  return numberFormat(value);
+}
+
 function drawChart(chartData) {
   let columns = [];
-  let colors = {
-    "clicks last 7 days": "#4285f4",
-    "incomplete clicks": "#4285f4",
-    "clicks before": "#4285f4",
-    "impressions last 7 days": "#5e35b1",
-    "incomplete impressions": "#5e35b1",
-    "impressions before": "#5e35b1",
-    "ctr last 7 days": "#00897b",
-    "incomplete ctr": "#00897b",
-    "ctr before": "#00897b",
-  };
+  const tokens = chartColors();
+  const colors = {};
+  const classes = {};
+  METRICS.forEach((metric) => {
+    Object.entries(seriesIds(metric)).forEach(([kind, id]) => {
+      colors[id] = tokens[metric];
+      classes[id] = kind;
+    });
+  });
 
   columns.push(chartData.timeseries);
   columns.push(chartData.clicksLast7Days);
@@ -543,47 +469,62 @@ function drawChart(chartData) {
 
   let ctrSet = new Set(["ctr last 7 days", "ctr before", "incomplete ctr"]);
 
+  // The current week ends at the midnight after the last data point; label the
+  // last day that is actually in it.
+  const lastWeek = `${dayOnlyFormat(chartData.startLast7Days)}–${dayOnlyFormat(chartData.endLast7Days - MS_PER_DAY)}`;
+  const prevWeek = `${dayOnlyFormat(chartData.startPrev7Days)}–${dayOnlyFormat(chartData.endPrev7Days)}`;
+  const incomplete = `${dayOnlyFormat(chartData.firstIncompleteHour)}–${dayOnlyFormat(chartData.lastIncompleteHour)}`;
+  const names = {};
+  METRICS.forEach((metric) => {
+    const ids = seriesIds(metric);
+    const label = metric === "ctr" ? "CTR" : metric;
+    names[ids.current] = `${label} ${lastWeek}`;
+    names[ids.previous] = `${label} ${prevWeek}`;
+    names[ids.incomplete] = `incomplete ${label} ${incomplete}`;
+  });
+
+  const initiallyHidden = [
+    ...Object.values(seriesIds("impressions")),
+    ...Object.values(seriesIds("ctr")),
+  ];
+  const hidden = new Set(initiallyHidden);
+
   const MS_BEFORE = 7 * 24 * 60 * 60 * 1000;
   clearChart();
+  y2Mode = "impressions";
   chart = bb.generate({
     point: {
       show: false,
     },
-    line: {
-      classes: [
-        "line-class-clicks-before",
-        "line-class-incomplete-clicks",
-        "line-class-clicks-last-7-days",
-        "line-class-impressions-before",
-        "line-class-incomplete-impressions",
-        "line-class-impressions-last-7-days",
-        "line-class-ctr-before",
-        "line-class-incomplete-ctr",
-        "line-class-ctr-last-7-days",
-      ],
-    },
     bindto: "#chart",
     padding: {
-      left: 46,
-      right: 60,
+      left: 70,
+      right: 80,
+    },
+    legend: {
+      hide: METRICS.map((m) => seriesIds(m).incomplete),
+      item: {
+        onclick(id) {
+          const group = legendGroup(id);
+          if (hidden.has(id)) {
+            group.forEach((g) => hidden.delete(g));
+            this.show(group);
+          } else {
+            group.forEach((g) => hidden.add(g));
+            this.hide(group);
+          }
+          updateY2Axis(hidden, chartData);
+        },
+      },
     },
     data: {
       x: "x",
       columns: columns,
       colors: colors,
+      classes: classes,
       order: "desc",
-      type: "line",
-      names: {
-        "clicks last 7 days": `clicks ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
-        "incomplete clicks": `incomplete clicks ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
-        "clicks before": `clicks ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
-        "impressions last 7 days": `impressions ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
-        "incomplete impressions": `incomplete impressions ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
-        "impressions before": `incomplete impressions ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
-        "ctr last 7 days": `ctr ${dayOnlyFormat(chartData.startLast7Days)}-${dayFormat(chartData.endLast7Days)}`,
-        "incomplete ctr": `incomplete ctr ${dayOnlyFormat(chartData.firstIncompleteHour)}-${dayFormat(chartData.lastIncompleteHour)}`,
-        "ctr before": `ctr ${dayOnlyFormat(chartData.startPrev7Days)}-${dayFormat(chartData.endPrev7Days)}`,
-      },
+      type: line(),
+      names: names,
       axes: {
         "impressions last 7 days": "y2",
         "impressions before": "y2",
@@ -592,28 +533,23 @@ function drawChart(chartData) {
         "ctr before": "y2",
         "incomplete ctr": "y2",
       },
-      hide: [
-        "impressions last 7 days",
-        "impressions before",
-        "incomplete impressions",
-        "ctr last 7 days",
-        "ctr before",
-        "incomplete ctr",
-      ],
+      hide: initiallyHidden,
     },
     tooltip: {
       format: {
         name: function (name, ratio, id, index) {
-          let metric = name?.split(" ")?.[0] || name;
-          let part2 = name?.split(" ")?.[1] || name;
-          let date = dayFormat(chartData.timeseries[index]);
+          // Use the series id ("clicks before", "incomplete ctr", …): `name` is the
+          // display name from data.names and never contains "before".
+          let [metric, part2] = id.split(" ");
+          // timeseries[0] is the "x" header, so data point `index` is at index + 1.
+          let ts = chartData.timeseries[index + 1];
           if (metric == "incomplete") {
             metric = `incomplete ${part2}`;
           }
           if (part2 == "before") {
-            date = dayFormat(chartData.timeseries[index] - MS_BEFORE);
+            ts -= MS_BEFORE;
           }
-          return `${metric} ${date}`;
+          return `${metric} ${dayFormat(ts)}`;
         },
         value: function (value, ratio, id, index) {
           if (ctrSet.has(id)) {
@@ -621,7 +557,7 @@ function drawChart(chartData) {
             let ctr = chartData.dataMapCtr.get(ts);
             return ctrFormat(ctr / 100);
           }
-          return parseFloat(value).toLocaleString();
+          return numberFormat(value);
         },
         title: function (x) {
           let d = new Date(x).getTime();
@@ -633,37 +569,32 @@ function drawChart(chartData) {
     },
     axis: {
       y: {
-        label: "clicks",
+        label: { text: "clicks", position: "outer-middle" },
         padding: {
-          top: 0,
+          top: 10,
           bottom: 0,
         },
         min: 0,
         show: true,
         tick: {
           fit: true,
-          format: function (d) {
-            return d.toLocaleString();
-          },
+          format: numberFormat,
         },
       },
       y2: {
-        label: "impressions",
+        label: { text: "impressions", position: "outer-middle" },
         padding: {
-          top: 0,
+          top: 10,
           bottom: 0,
         },
         min: 0,
         show: true,
         tick: {
           fit: true,
-          format: function (d) {
-            return d.toLocaleString();
-          },
+          format: (d) => y2Tick(d, chartData),
         },
       },
       x: {
-        label: "by hour",
         padding: {
           left: 0,
           right: 0,
@@ -678,14 +609,25 @@ function drawChart(chartData) {
     },
   });
 
+  drawTimeframe();
+}
+
+/** Shaded band for the Pages tab's timeframe. */
+function drawTimeframe() {
+  if (!chart) return;
+  chart.regions.remove();
+  if (!(settings.from < settings.to)) return;
   try {
     chart.regions.add({
       axis: "x",
       start: settings.from,
-      end: settings.to,
+      end: settings.to + MS_PER_HOUR,
       class: "regionCut",
       label: {
-        text: `${dateWeekdayFormat(settings.from)}`,
+        text:
+          new Date(settings.from).toDateString() === new Date(settings.to).toDateString()
+            ? dateWeekdayFormat(settings.from)
+            : `${dayFormat(settings.from)} – ${dayFormat(settings.to)}`,
         x: 5,
         y: 4,
       },
@@ -695,95 +637,8 @@ function drawChart(chartData) {
   }
 }
 
-async function setClipboard(text, message) {
-  const type = "text/plain";
-  const blob = new Blob([text], { type });
-  const data = [new ClipboardItem({ [type]: blob })];
-  await navigator.clipboard.write(data);
-
-  const $badge = $("#action-badge");
-  $badge.text(message);
-  $badge.removeClass("d-none").addClass("visible");
-  setTimeout(() => {
-    $badge
-      .removeClass("visible")
-      .one("transitionend", () => $badge.addClass("d-none"));
-  }, 1000);
-}
-
-function getNestedProperty(obj, path) {
-  return path.split(".").reduce((acc, part) => acc && acc[part], obj);
-}
-
-// Function to filter selections based on visible columns and use column titles in the output
-function filterVisibleColumns(selections, columns) {
-  // Create a mapping of field paths to titles for visible columns
-  const columnMap = columns
-    .filter((column) => column.visible)
-    .reduce((map, column) => {
-      map[column.field] = column.title;
-      return map;
-    }, {});
-
-  // Filter each selection to include only data from visible columns
-  const filteredSelections = selections.map((selection) => {
-    const filteredData = {};
-    Object.keys(columnMap).forEach((field) => {
-      const value = getNestedProperty(selection, field);
-      if (value !== undefined) {
-        // Use the title as the key in the output object
-        filteredData[columnMap[field]] = value;
-      }
-    });
-    return filteredData;
-  });
-
-  return filteredSelections;
-}
-
-function getGSheetClipboard(table) {
-  let filteredSelections = filterVisibleColumns(table.data, table.columns);
-  let formatters = [];
-  let output = table.columns
-    .map((col) => {
-      formatters.push(col.formatter);
-      if (col.visible) {
-        return col.title;
-      }
-    })
-    .filter((col) => col)
-    .join("\t");
-  output += "\n";
-  output += filteredSelections
-    .map((col) => {
-      return Object.values(col)
-        .map((data, index) => {
-          let formatter = formatters[index];
-          if (!formatter) {
-            return data;
-          }
-          return formatter(data);
-        })
-        .join("\t");
-    })
-    .join("\n");
-  return output;
-}
-
-function tableButtons() {
-  return {
-    btnGSheetClipboard: {
-      text: "sheets clipboard",
-      icon: "bi-file-spreadsheet",
-      event: function () {
-        let text = getGSheetClipboard(this);
-        setClipboard(text);
-      },
-      attributes: {
-        title: "copy selected rows for google sheets",
-      },
-    },
-  };
+function tableButtons(name) {
+  return exportButtons(settings, name);
 }
 
 function rowStyle(row, index) {
@@ -870,29 +725,10 @@ function dayOnlyFormat(value) {
   }
 }
 
-function toLocaleString(value) {
-  if (!value) return "";
-  let d = new Date(Number(value));
-  return d.toLocaleString();
-}
-
-function getLocalISOStringSlice(ts) {
-  const now = new Date(ts);
-  const offset = now.getTimezoneOffset(); // in minutes
-  const localTime = new Date(now.getTime() - offset * 60000);
-  return localTime.toISOString().slice(0, 16);
-}
-
-function ctrFormat(value) {
-  const num = Number(value);
-  if (!isFinite(num) || num === 0) return "0.0%";
-  return `${(num * 100).toFixed(1)}%`;
-}
-
 let hoursColumns = [
   {
     field: "timestamp",
-    title: "timestamp",
+    title: "hour",
     formatter: dateFormat,
     sortable: true,
     visible: true,
@@ -902,6 +738,8 @@ let hoursColumns = [
   {
     field: "clicks",
     title: "clicks",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -910,6 +748,8 @@ let hoursColumns = [
   {
     field: "impressions",
     title: "impressions",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -955,6 +795,8 @@ let pagesColumns = [
   {
     field: "clicks",
     title: "clicks",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -963,6 +805,8 @@ let pagesColumns = [
   {
     field: "impressions",
     title: "impressions",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -988,24 +832,8 @@ let pagesColumns = [
   },
 ];
 
-function sanitizeFilename(input) {
-  const illegalRe = /[\\\/:*?"<>|\x00-\x1F]/g;
-  return input.replace(illegalRe, "_");
-}
-
-function generateFilename(name) {
-  return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
-}
-
 function urlFormatter(value, row) {
-  return `${value}<button
-    data-url="${value}"
-    class="action-icon clipboard-icon btn btn-transparent float-end"
-  ></button><button
-    data-url="${value}"
-    data-id="${row.id}"
-    class="action-icon bi-graph-up btn btn-transparent float-end"
-  ></button>`;
+  return `${escapeHtml(value)}${pageActionButtons(value, row.id)}`;
 }
 
 function rowStylePages(row, index) {
@@ -1018,6 +846,7 @@ function rowStylePages(row, index) {
 
 async function generatePagesTable() {
   $pagesTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#pagestable-toolbar",
     uniqueId: "id",
     classes: "table table-hover",
@@ -1026,18 +855,11 @@ async function generatePagesTable() {
     pageSize: 100,
     pagination: true,
     showRefresh: false,
-    buttons: tableButtons,
+    buttons: () => tableButtons("pages"),
     search: true,
     columns: pagesColumns,
     rowStyle: rowStylePages,
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("pages");
-      },
-    },
     sortOrder: "desc",
     sortName: "clicks",
   });
@@ -1045,6 +867,7 @@ async function generatePagesTable() {
 
 async function generateHoursTable() {
   $hoursTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#hourstable-toolbar",
     uniqueId: "timestamp",
     classes: "table table-hover",
@@ -1052,44 +875,12 @@ async function generateHoursTable() {
     data: [],
     pageSize: settings.hours,
     showRefresh: false,
-    buttons: tableButtons,
+    buttons: () => tableButtons("timeline"),
     columns: hoursColumns,
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("timeline");
-      },
-    },
     sortOrder: "desc",
     sortName: "timestamp",
   });
-}
-
-function addFilter(name, value) {
-  let u = new URL(document.location.href);
-  if (u.searchParams.has(name)) {
-    u.searchParams.set(name, value);
-  } else {
-    u.searchParams.append(name, value);
-  }
-  history.pushState(null, null, u.search);
-  currentURL = new URL(document.location);
-}
-function removeFilter(name) {
-  let u = new URL(document.location.href);
-  u.searchParams.delete(name);
-  if (u.search) {
-    history.pushState(null, null, u.search);
-  } else {
-    history.pushState(
-      null,
-      null,
-      document.location.origin + document.location.pathname,
-    );
-  }
-  currentURL = new URL(document.location);
 }
 
 function getYesterday() {
@@ -1100,48 +891,6 @@ function getYesterday() {
   to = to - 1000 * 60 * 60 * 1;
 
   return { from, to };
-}
-
-async function checkAuth() {
-  if (document.visibilityState !== "visible") {
-    return;
-  }
-  chrome.identity.getAuthToken({ interactive: false }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      $("#auth_dropdown")
-        .removeClass("btn-outline-primary")
-        .removeClass("btn-outline-success")
-        .addClass("btn-outline-danger");
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
-  });
-}
-
-let dimensionsFilterOperators = {
-  "*": "contains",
-  "-": "notContains",
-  "=": "equals",
-  "!": "notEquals",
-  "~": "includingRegex",
-  _: "excludingRegex",
-};
-function assemblePageFilters() {
-  if (!settings.page) {
-    return [];
-  }
-  if (settings.page.length < 2) {
-    return [];
-  }
-  let operator = dimensionsFilterOperators[settings.page[0]];
-  let dimension = "page";
-  let expression = settings.page.slice(1);
-
-  return [{ dimension, operator, expression }];
 }
 
 function getIdentifier(url) {
@@ -1177,112 +926,220 @@ function reconstructFromId(id) {
   }
 }
 
-async function getFirstImpressions() {
-  let firstImpressions = {};
-  let pattern = reconstructFromId(
-    `(${[...new Set($pagesTable.bootstrapTable("getData").map((d) => d.id))].join("|")})`,
-  );
+// The API rejects very long filter expressions; stay well below that and batch.
+const MAX_REGEX_LENGTH = 3500;
 
-  const requestBody = {
-    aggregationType: "AUTO",
-    dataState: "HOURLY_ALL",
-    type: settings.type,
-    rowLimit: 25000,
-    startDate: `${new Date(settings.from).getFullYear()}-01-01`,
-    endDate: `${new Date(settings.to).getFullYear()}-12-31`,
-    startRow: 0,
-    dimensions: ["HOUR", "PAGE"],
-    dimensionFilterGroups: [
-      {
-        filters: [
+/**
+ * Position of the first capturing group "( … )" in a regex source, or null.
+ * Skips escapes, character classes and non-capturing/lookaround groups.
+ */
+function findFirstCaptureGroup(source) {
+  const skip = (i) => (source[i] === "\\" ? i + 1 : i);
+  let inClass = false;
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === "\\") { i = skip(i); continue; }
+    if (inClass) { if (source[i] === "]") inClass = false; continue; }
+    if (source[i] === "[") { inClass = true; continue; }
+    if (source[i] !== "(" || source[i + 1] === "?") continue;
+    let depth = 0;
+    let cls = false;
+    for (let j = i; j < source.length; j++) {
+      const c = source[j];
+      if (c === "\\") { j = skip(j); continue; }
+      if (cls) { if (c === "]") cls = false; continue; }
+      if (c === "[") cls = true;
+      else if (c === "(") depth++;
+      else if (c === ")" && --depth === 0) return { start: i, end: j };
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * INCLUDING_REGEX expressions (each ≤ MAX_REGEX_LENGTH) matching the pages of the
+ * given table rows. Rows aggregated by ID substitute the escaped IDs into the ID
+ * regex's capture group; all other rows match their exact (escaped) URL.
+ */
+function firstImpressionPatterns(rows) {
+  const group = settings.idRegex ? findFirstCaptureGroup(settings.idRegex) : null;
+  const idTerms = new Set();
+  const urlTerms = new Set();
+  rows.forEach(({ id, page }) => {
+    if (group && id !== page) idTerms.add(escapeRegex(id));
+    else urlTerms.add(escapeRegex(page));
+  });
+
+  const wrapId = (alts) =>
+    `${settings.idRegex.slice(0, group.start)}(?:${alts})${settings.idRegex.slice(group.end + 1)}`;
+  const wrapUrl = (alts) => `^(?:${alts})$`;
+
+  const patterns = [];
+  const batch = (terms, wrap) => {
+    if (!terms.size) return;
+    const overhead = wrap("").length;
+    let current = [];
+    let length = overhead;
+    for (const term of terms) {
+      if (current.length && length + term.length + 1 > MAX_REGEX_LENGTH) {
+        patterns.push(wrap(current.join("|")));
+        current = [];
+        length = overhead;
+      }
+      current.push(term);
+      length += term.length + 1;
+    }
+    if (current.length) patterns.push(wrap(current.join("|")));
+  };
+  batch(idTerms, wrapId);
+  batch(urlTerms, wrapUrl);
+  return patterns;
+}
+
+async function getFirstImpressions() {
+  const rows = $pagesTable.bootstrapTable("getData", { unfiltered: true });
+  if (!rows.length) return;
+
+  const firstImpressions = {};
+  try {
+    for (const expression of firstImpressionPatterns(rows)) {
+      const { rows: data } = await gscQueryAll(settings.siteUrl, settings.auth.token, {
+        aggregationType: "AUTO",
+        dataState: "HOURLY_ALL",
+        type: settings.type,
+        rowLimit: 25000,
+        startDate: `${new Date(settings.from).getFullYear()}-01-01`,
+        endDate: `${new Date(settings.to).getFullYear()}-12-31`,
+        dimensions: ["HOUR", "PAGE"],
+        dimensionFilterGroups: [
           {
-            dimension: "PAGE",
-            operator: "INCLUDING_REGEX",
-            expression: pattern,
+            filters: [
+              { dimension: "PAGE", operator: "INCLUDING_REGEX", expression },
+            ],
           },
         ],
-      },
-    ],
-  };
-
-  try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
-
-    data?.rows?.forEach((d) => {
-      let ts = new Date(d?.keys?.[0]).getTime();
-      let originalUrl = d?.keys?.[1];
-      let extractedId = getIdentifier(originalUrl);
-
-      if (
-        !firstImpressions[extractedId] ||
-        ts < firstImpressions[extractedId]
-      ) {
-        firstImpressions[extractedId] = ts;
-      }
-    });
-
-    Object.keys(firstImpressions).forEach((key) => {
-      $pagesTable.bootstrapTable("updateCellByUniqueId", {
-        id: key,
-        value: firstImpressions[key],
-        field: "timestamp",
       });
-    });
+      data.forEach((d) => {
+        const ts = new Date(d.keys[0]).getTime();
+        const id = getIdentifier(d.keys[1]);
+        if (!firstImpressions[id] || ts < firstImpressions[id]) {
+          firstImpressions[id] = ts;
+        }
+      });
+    }
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    apiError(err);
+    return;
   }
+
+  Object.entries(firstImpressions).forEach(([id, value]) => {
+    $pagesTable.bootstrapTable("updateCellByUniqueId", {
+      id,
+      field: "timestamp",
+      value,
+    });
+  });
+}
+
+function loadAll() {
+  listSites();
+  getTimeline();
+  getPages();
+}
+
+/** Reloads chart and both tables for the current settings. */
+function reloadAll() {
+  clearChart();
+  if (!settings.auth.token) return;
+  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  getTimeline();
+  getPages();
+}
+
+/** Applies a URL filter (settings.page format, or null to remove) and reloads. */
+function setPageFilter(page) {
+  settings.page = page || null;
+  if (settings.page) addFilter("page", settings.page);
+  else removeFilter("page");
+  syncPageFilterUi(settings.page);
+  pageFilterModal.hide();
+  reloadAll();
+}
+
+/** Back/forward: take the whole state from the URL again. */
+function syncFromUrl(params) {
+  readSharedUrlState(settings, params);
+  const fallback = getYesterday();
+  settings.from = parseTimestamp(params.get("from")) ?? fallback.from;
+  settings.to = parseTimestamp(params.get("to")) ?? fallback.to;
+  $("#from").val(getLocalISOStringSlice(settings.from));
+  $("#to").val(getLocalISOStringSlice(settings.to));
+  $("#from, #to").removeClass("is-invalid");
+  reloadAll();
+}
+
+function clearAll() {
+  clearChart();
+  $pagesTable.bootstrapTable("removeAll");
+  $hoursTable.bootstrapTable("removeAll");
+}
+
+const floorHour = (ts) => {
+  const d = new Date(ts);
+  d.setMinutes(0, 0, 0);
+  return d.getTime();
+};
+
+/** Sets the Pages tab timeframe (ms timestamps, hour starts) and reloads pages. */
+function applyRange({ from, to }) {
+  from = floorHour(from);
+  to = floorHour(to);
+  settings.from = from;
+  settings.to = to;
+  $("#from").val(getLocalISOStringSlice(from));
+  $("#to").val(getLocalISOStringSlice(to));
+  addFilters({ from: getLocalISOStringSlice(from), to: getLocalISOStringSlice(to) });
+
+  const valid = from < to;
+  $("#from, #to").toggleClass("is-invalid", !valid);
+  $pagesTable.bootstrapTable("removeAll");
+  drawTimeframe();
+  if (!valid) {
+    showNotice("“From” must be before “to”", 3000);
+    return;
+  }
+  getPages();
+}
+
+/** Quick ranges for the hourly window (Google keeps ~10 days of hourly data). */
+function hourPresets() {
+  const startOfDay = (daysAgo) => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const now = () => floorHour(Date.now());
+  return [
+    { label: "Today", range: () => ({ from: startOfDay(0), to: now() }) },
+    { label: "Yesterday", range: () => getYesterday() },
+    { label: "Last 24 hours", range: () => ({ from: now() - 24 * MS_PER_HOUR, to: now() }) },
+    { label: "Last 3 days", range: () => ({ from: startOfDay(2), to: now() }) },
+    { label: "Last 7 days", range: () => ({ from: startOfDay(6), to: now() }) },
+  ];
 }
 
 async function init() {
+  // Auth (and with it the first data load) waits for the ID regex so page
+  // aggregation never runs with a stale/empty setting.
   chrome.storage.sync.get({ idRegex: "" }, (items) => {
     settings.idRegex = items.idRegex;
+    initAuth(settings, { onSignIn: loadAll, onSignOut: clearAll });
   });
 
-  chrome.identity.getAuthToken({ interactive: false }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      $("#auth_dropdown")
-        .removeClass("btn-outline-primary")
-        .removeClass("btn-outline-success")
-        .addClass("btn-outline-danger");
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
-
-    listSites();
-    if (settings.siteUrl) {
-      getTimeline();
-      getPages();
-    }
-  });
-  document.addEventListener("visibilitychange", checkAuth);
-
-  $("#property").attr("placeholder", settings.siteUrl);
+  showProperty(settings.siteUrl);
   $("#type").val(settings.type);
-  if (settings.siteUrl) {
-    $("#propertyBtn").text(settings.siteUrl);
-  }
 
   let yesterday = getYesterday();
   if (!settings.from) {
@@ -1297,26 +1154,7 @@ async function init() {
   generateHoursTable();
   generatePagesTable();
 
-  $(".nav-tabs").on("click", ".nav-item", function (e) {
-    e.preventDefault(); // Prevent the default link behavior
-
-    let id = $(this).data("id");
-    $tabs.removeClass("visible").addClass("invisible d-none");
-    $(`#${id}Tab`).removeClass("invisible d-none").addClass("visible");
-
-    // Remove 'active' from all nav links in the same nav-tabs container
-    $(this)
-      .closest(".nav-tabs")
-      .find(".nav-link")
-      .removeClass("active text-primary")
-      .addClass("text-secondary");
-
-    // Add 'active' to the clicked nav-item's nav-link
-    $(this)
-      .find(".nav-link")
-      .removeClass("text-secondary")
-      .addClass("active text-primary");
-  });
+  initTabs();
 
   $("#type").on("change", function () {
     let type = $(this).val();
@@ -1338,23 +1176,16 @@ async function init() {
       return;
     }
     if (!settings.properties.includes(selectedValue)) {
-      //console.warn("No valid property selected");
-      $("#property").addClass("is-invalid");
-      $("#propertyBtn").addClass("btn-outline-danger");
-      $("#propertyBtn").removeClass("btn-outline-secondary");
+      showProperty(null, false);
       return;
     }
-    $("#property").removeClass("is-invalid");
-    $("#propertyBtn").removeClass("btn-outline-danger");
-    $("#propertyBtn").addClass("btn-outline-secondary");
     clearChart();
     $pagesTable.bootstrapTable("removeAll");
     $hoursTable.bootstrapTable("removeAll");
 
     settings.siteUrl = selectedValue;
-    $("#property").attr("placeholder", settings.siteUrl);
-    $("#property").val("");
-    $("#propertyBtn").text(settings.siteUrl);
+    showProperty(settings.siteUrl);
+    $("#property").val("").trigger("blur");
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
@@ -1364,128 +1195,32 @@ async function init() {
     let val = $(this).val();
     let id = $(this).attr("id");
     if (!val) return;
-
-    const date = new Date(val);
-    date.setMinutes(0);
-    date.setSeconds(0);
-    date.setMilliseconds(0);
-
-    // Format back to datetime-local string
-    const pad = (n) => String(n).padStart(2, "0");
-    const formatted = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
-
-    $(this).val(formatted);
-    settings[id] = date.getTime();
-    addFilter(id, formatted);
-
-    if (chart) {
-      chart.regions.remove();
-    }
-
-    $pagesTable.bootstrapTable("removeAll");
-    if (chart && settings.from < settings.to) {
-      chart.regions.add({
-        axis: "x",
-        start: settings.from,
-        end: settings.to,
-        class: "regionCut",
-        label: {
-          text: `${dateWeekdayFormat(settings.from)}`,
-          x: 5,
-          y: 4,
-        },
-      });
-      getPages();
-    }
+    applyRange({ ...settings, [id]: new Date(val).getTime() });
   });
 
-  if (settings.page) {
-    $("#urlFilterMode").val(dimensionsFilterOperators[settings.page[0]]);
-    $("#floatingPageFilterInput").val(settings.page.slice(1));
+  initRangePresets(hourPresets(), applyRange);
 
-    $("#pageFilter")
-      .removeClass("btn-outline-secondary")
-      .addClass("btn-primary");
-  }
+  syncPageFilterUi(settings.page);
 
-  $("#applyPageFilter").on("click", function () {
-    let type = $("#urlFilterMode").val();
-    let page = $("#floatingPageFilterInput").val();
-
-    if (!page) {
-      settings.page = null;
-      removeFilter("page");
-      $("#pageFilter")
-        .addClass("btn-outline-secondary")
-        .removeClass("btn-primary");
-    } else {
-      settings.page = `${type}${page}`;
-      addFilter("page", settings.page);
-      $("#pageFilter")
-        .removeClass("btn-outline-secondary")
-        .addClass("btn-primary");
-    }
-
-    pageFilterModal.hide();
-
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-    getTimeline();
-    getPages();
+  initPageFilterModal(function () {
+    const value = $("#floatingPageFilterInput").val();
+    setPageFilter(value ? `${$("#urlFilterMode").val()}${value}` : null);
   });
 
-  $propertyBtn.on("click", function () {
-    $propertyBtn.removeClass("d-block").addClass("d-none");
-    $propertyInput.removeClass("d-none").addClass("d-block").focus();
+  // Rows aggregated by ID filter on the ID (rebuilt into a URL fragment from the ID
+  // regex); other rows filter on their exact URL.
+  initPageFilterActions((url, id) => {
+    const fragment = id && id !== url ? reconstructFromId(id) : url;
+    setPageFilter(pageFilterFor(url, fragment));
   });
 
-  // input blur → hide input, show button
-  $propertyInput.on("blur", function () {
-    $propertyInput.removeClass("d-block").addClass("d-none");
-    $propertyBtn.removeClass("d-none").addClass("d-block");
-  });
+  initHistory(syncFromUrl);
 
-  $(document).on("click", ".clipboard-icon", function () {
-    let text = $(this).data("url");
-    setClipboard(text, "page copied to clipboard");
-  });
+  initPropertyPicker();
 
-  $(document).on("click", ".bi-graph-up", function () {
-    let id = $(this).data("id");
-    let fragment = reconstructFromId(id);
+  initClipboardIcons();
+  initViewSwitcher();
+  initKeyboardShortcuts();
 
-    if (fragment) {
-      // 1. Filter-String für "URLs containing" (*) erstellen
-      settings.page = `*${fragment}`;
-
-      // 2. Filter in der URL und im Verlauf speichern
-      addFilter("page", settings.page);
-
-      // 3. UI-Zustand des Filter-Buttons und Modals aktualisieren
-      $("#pageFilter")
-        .removeClass("btn-outline-secondary")
-        .addClass("btn-primary");
-      $("#urlFilterMode").val("*"); // Setzt Dropdown auf "contains"
-      $("#floatingPageFilterInput").val(fragment);
-
-      // 4. Bestehende Daten löschen und Lade-Animation zeigen
-      clearChart();
-      $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-      $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-      // 5. Daten mit neuem Filter von der API abrufen
-      getTimeline();
-      getPages();
-    }
-  });
-
-  const popoverTriggerList = document.querySelectorAll(
-    '[data-bs-toggle="popover"]',
-  );
-  const popoverList = [...popoverTriggerList].map(
-    (popoverTriggerEl) => new bootstrap.Popover(popoverTriggerEl),
-  );
 }
 init();

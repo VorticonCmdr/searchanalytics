@@ -299,12 +299,12 @@
     <div class="feature-card">
       <div class="feature-icon icon-purple">📈</div>
       <h3>Week-over-Week Chart</h3>
-      <p>A dual-axis Billboard.js chart overlays the last 7 days against the previous 7-day period for instant comparison. Incomplete hours are visually flagged.</p>
+      <p>The last 7 days drawn bold, the previous 7 days dashed on the same hours, incomplete hours dotted. Toggle clicks, impressions and CTR from the legend.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon icon-teal">🔍</div>
       <h3>Powerful URL Filtering</h3>
-      <p>Six filter operators: contains, not contains, exact, not exact, regex match, regex exclude. Encode any filter into a shareable URL.</p>
+      <p>Six filter operators: contains, not contains, exact, not exact, regex match, regex exclude — or filter by any page straight from a table row. The active filter stays visible and clears with one click.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon icon-orange">🗂</div>
@@ -319,7 +319,7 @@
     <div class="feature-card">
       <div class="feature-icon icon-green">🔗</div>
       <h3>Shareable URLs</h3>
-      <p>Every filter, property, date range, and search type is encoded in the URL. Bookmark a view or share it with a teammate and they see exactly the same data.</p>
+      <p>Every filter, property, date range, and search type is encoded in the URL. Bookmark a view, share it with a teammate, or step back and forth with the browser's Back button.</p>
     </div>
   </div>
 </section>
@@ -333,10 +333,10 @@
       <h2>Hourly chart with period comparison</h2>
       <p>The main chart shows the most recent 7 days of hourly data overlaid against the preceding 7-day period — so you can instantly see whether today is tracking above or below last week.</p>
       <ul>
-        <li>Clicks on left axis, impressions and CTR on right axis</li>
-        <li>Incomplete hours (not yet finalized by Google) rendered as a separate dashed series</li>
-        <li>Click any series in the legend to toggle it on/off</li>
-        <li>Selected date range highlighted as a shaded region</li>
+        <li>Clicks on the left axis, impressions and CTR on the right — CTR shown in real percentages when it's on its own</li>
+        <li>Last 7 days solid, previous 7 days dashed, incomplete hours (not yet finalized by Google) dotted</li>
+        <li>Hover any hour to compare it with the same hour a week earlier</li>
+        <li>The Pages tab's timeframe is highlighted as a shaded band</li>
       </ul>
     </div>
     <div class="showcase-img">
@@ -350,10 +350,10 @@
       <h2>Page-level performance at a glance</h2>
       <p>The Pages tab shows aggregated clicks, impressions, and CTR per URL for any time window you define — down to the hour. Sort, search, and drill into any URL.</p>
       <ul>
-        <li>Configurable from/to datetime pickers for precise windows</li>
-        <li>"First impression" column shows when each page first appeared in Google's index this year</li>
-        <li>Click the chart icon on any row to instantly filter the timeline to that URL</li>
-        <li>Aggregate multiple URLs by a shared ID via the Options regex</li>
+        <li>From/to pickers to the hour, plus quick ranges (today, yesterday, last 24 hours, …)</li>
+        <li>Hover a row and click the funnel to filter the whole view by that page — or copy its URL</li>
+        <li>The active URL filter is shown as a chip in the toolbar; × removes it</li>
+        <li>"First impression" column and aggregation of URLs by a shared ID via the Options regex</li>
       </ul>
     </div>
     <div class="showcase-img">
@@ -365,10 +365,11 @@
   <div class="showcase-item">
     <div class="showcase-text">
       <h2>Property by day — longer-range view</h2>
-      <p>Switch to the Days view for monthly or daily trend analysis across your entire data history. Toggle between month and day granularity depending on the timeframe you need.</p>
+      <p>Switch to the Days view for daily or monthly trend analysis across up to 16 months — with your events drawn right on the chart.</p>
       <ul>
         <li>Toggle between day and month granularity</li>
-        <li>Same URL filter and property selector as the hourly view</li>
+        <li>Quick ranges: last 7 / 28 days, 3 / 12 / 16 months, this year</li>
+        <li>Switching views keeps your property, search type and URL filter</li>
         <li>CSV and Google Sheets clipboard export</li>
       </ul>
     </div>
@@ -384,7 +385,8 @@
       <p>The Days view includes a built-in events system. Mark deploys, algorithm updates, content changes, or anything else directly on the chart so you can correlate traffic shifts with what actually happened.</p>
       <ul>
         <li>Point events and date-range events — both appear as chart annotations</li>
-        <li>Color-coded: checked events in pink, unchecked in gray</li>
+        <li>Import Google's algorithm updates and incidents from the Search Status Dashboard in one click</li>
+        <li>Tick an event to highlight it in pink on the chart</li>
         <li>Categorise events (deploy, update, issue, or custom)</li>
         <li>Scope events to a single property or show them across all properties</li>
         <li>Stored locally in Chrome storage — no account, no server</li>
@@ -392,6 +394,23 @@
     </div>
     <div class="showcase-img">
       <img src="screenshots/screenshot-events.png" alt="Chart event annotations" />
+    </div>
+  </div>
+
+  <!-- View 5: Pages by hour -->
+  <div class="showcase-item">
+    <div class="showcase-text">
+      <h2>Compare individual pages hour by hour</h2>
+      <p>The Pages by hour view plots single URLs against each other, so you can see exactly when an article took off — or dropped — in Google.</p>
+      <ul>
+        <li>Tick pages and draw them; untick and draw again to remove them</li>
+        <li>Switch the metric between clicks, impressions and CTR</li>
+        <li>Pick any line colour from the swatch next to the page</li>
+        <li>"First hour" shows when each page first got impressions</li>
+      </ul>
+    </div>
+    <div class="showcase-img">
+      <img src="screenshots/screenshot-hourly-pages.png" alt="Pages by hour — several URLs on one chart" />
     </div>
   </div>
 

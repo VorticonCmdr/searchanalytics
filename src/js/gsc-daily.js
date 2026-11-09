@@ -1,25 +1,58 @@
-import $ from 'jquery';
-import * as bootstrap from 'bootstrap';
-import bb from 'billboard.js';
-import 'd3';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import 'bootstrap-icons/font/bootstrap-icons.min.css';
-import 'bootstrap-table/dist/bootstrap-table.min.css';
-import '../css/searchanalytics.css';
-import 'tableexport.jquery.plugin';
-import 'bootstrap-table';
-import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
+import bb, { grid, line, regions } from "billboard.js";
+import {
+  $,
+  bootstrap,
+  MS_PER_DAY,
+  addFilter,
+  addFilters,
+  apiError,
+  assemblePageFilters,
+  chartColors,
+  clearError,
+  ctrFormat,
+  escapeHtml,
+  escapeRegex,
+  exportButtons,
+  getLocalISOStringSlice,
+  gscQuery,
+  gscQueryAll,
+  initAuth,
+  initClipboardIcons,
+  initHistory,
+  initKeyboardShortcuts,
+  initPageFilterActions,
+  initPageFilterModal,
+  initPropertyPicker,
+  initRangePresets,
+  initTabs,
+  initViewSwitcher,
+  loadProperties,
+  numberFormat,
+  pageActionButtons,
+  pageFilterFor,
+  parseTimestamp,
+  readSharedUrlState,
+  removeFilter,
+  setClipboard,
+  showChartState,
+  showNotice,
+  showProperty,
+  syncPageFilterUi,
+} from "./common.js";
 
-let currentURL = new URL(document.location);
+// billboard.js v4 ESM: the region (timeframe/event bands) and grid (event lines)
+// APIs are tree-shakable modules that must be registered before bb.generate().
+grid();
+regions();
+
+const currentURL = new URL(document.location);
 
 let settings = {
   properties: [],
   type: currentURL.searchParams.get("type") || "discover",
   from:
     currentURL.searchParams.get("from") ||
-    new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 30)
-      .toISOString()
-      .slice(0, 10),
+    `${new Date().getFullYear()}-01-01`,
   to:
     currentURL.searchParams.get("to") || new Date().toISOString().slice(0, 10),
   auth: {
@@ -27,134 +60,34 @@ let settings = {
   },
   siteUrl: currentURL.searchParams.get("property") || null,
   page: currentURL.searchParams.get("page") || null,
-  groupBy: currentURL.searchParams.get("groupBy") || "month",
+  groupBy: currentURL.searchParams.get("groupBy") || "day",
   dataState: currentURL.searchParams.get("dataState") || "ALL",
 };
 
-const authorizeButton = document.getElementById("authorize_button");
-const signoutButton = document.getElementById("signout_button");
-const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
-let tokenClient;
-let gapiInited = false;
-let gisInited = false;
+let noticeTimer;
+const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
 let chart;
 
 let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
 let $eventsTable = $("#eventstable");
-let $tabs = $(".tab");
-let $propertyBtn = $("#propertyBtn");
-let $propertyInput = $("#property");
 
-authorizeButton.onclick = function handleAuthClick() {
-  chrome.identity.getAuthToken({ interactive: true }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      console.error(
-        "Could not get auth token:",
-        chrome.runtime.lastError.message,
-      );
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
-    listSites();
-  });
-};
-
-signoutButton.onclick = function handleSignoutClick() {
-  chrome.identity.clearAllCachedAuthTokens(() => {
-    console.info("Signed out");
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll");
-    $hoursTable.bootstrapTable("removeAll");
-    $("#properties-list").empty();
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-success")
-      .addClass("btn-outline-danger");
-  });
-};
-
-async function listSites() {
-  if (!settings.auth.token) {
-    console.error("No auth token");
-    return;
-  }
-  try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
-
-    settings.properties = [];
-    let selectsHTML = data?.siteEntry
-      ?.map((entry) => {
-        return entry.siteUrl.replace("sc-domain:", "sc-domain://");
-      })
-      ?.sort((a, b) => {
-        try {
-          const urlA = new URL(a);
-          const urlB = new URL(b);
-
-          const hostA = urlA.host.split(".").reverse().join(".");
-          const hostB = urlB.host.split(".").reverse().join(".");
-
-          if (hostA < hostB) return -1;
-          if (hostA > hostB) return 1;
-
-          const pathA = urlA.pathname.toLowerCase();
-          const pathB = urlB.pathname.toLowerCase();
-
-          if (pathA < pathB) return -1;
-          if (pathA > pathB) return 1;
-
-          return 0;
-        } catch (e) {
-          console.error("Invalid URL", a, b);
-          return 0;
-        }
-      })
-      ?.map((data) => {
-        let property = data.replace("sc-domain://", "sc-domain:");
-        if (settings.property == property) {
-          $("#property").val(settings.property);
-          getTimeline(settings.property);
-        }
-        settings.properties.push(property);
-        return `<option value="${property}"></option>`;
-      })
-      .join("\n");
-
-    $("#properties-list").html(selectsHTML);
-  } catch (err) {
-    console.error(`Error: ${err.message}`);
-  }
+function listSites() {
+  return loadProperties(settings);
 }
 
 async function getPages() {
+  if (!settings.siteUrl) {
+    $pagesTable.bootstrapTable("removeAll").bootstrapTable("hideLoading");
+    return;
+  }
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
 
-  if (!settings.from && !settings.to) {
-    console.error("timeframe not selected");
+  if (!settings.from || !settings.to) {
+    $pagesTable.bootstrapTable("hideLoading");
+    showNotice("Select a timeframe first", 3000);
     return;
   }
 
@@ -167,31 +100,13 @@ async function getPages() {
     endDate: settings.to,
     startRow: 0,
     dimensions: ["PAGE"],
-    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
+    dimensionFilterGroups: [{ filters: assemblePageFilters(settings.page) }],
   };
 
   try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
+    const data = await gscQuery(settings.siteUrl, settings.auth.token, requestBody);
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
-
-    const pages = data.rows.map((d) => {
+    const pages = (data.rows ?? []).map((d) => {
       return {
         page: d?.keys?.[0],
         clicks: d?.clicks,
@@ -202,7 +117,9 @@ async function getPages() {
 
     $pagesTable.bootstrapTable("load", pages).bootstrapTable("hideLoading");
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    apiError(err);
+  } finally {
+    $pagesTable.bootstrapTable("hideLoading");
   }
 }
 
@@ -236,11 +153,18 @@ function aggregateByUrl(rows) {
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions > 0 ? entry.clicks / entry.impressions : 0,
   }));
 }
 
 async function getTimeline() {
+  if (!settings.siteUrl) {
+    $hoursTable.bootstrapTable("removeAll").bootstrapTable("hideLoading");
+    showChartState("noProperty");
+    return;
+  }
+  clearError();
+  showChartState("loading");
   $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
   const requestBody = {
     aggregationType: "AUTO",
@@ -251,53 +175,32 @@ async function getTimeline() {
     dataState: settings.dataState,
     startDate: settings.from,
     endDate: settings.to,
-    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
+    dimensionFilterGroups: [{ filters: assemblePageFilters(settings.page) }],
   };
 
   try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
-
-    if (!response.ok) {
-      if (response.status == 401) {
-        console.error(`Unauthorized`);
-        clearChart();
-        $pagesTable.bootstrapTable("removeAll");
-        $hoursTable.bootstrapTable("removeAll");
-        $("#properties-list").empty();
-        $("#auth_dropdown")
-          .removeClass("btn-outline-primary")
-          .removeClass("btn-outline-success")
-          .addClass("btn-outline-danger");
-        return;
-      }
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
+    const data = await gscQuery(settings.siteUrl, settings.auth.token, requestBody);
 
     const {
       timeline: monthlyTL,
       chartData: monthlyCD,
       firstIncompleteHour: firstIncompleteHour,
-    } = transformData(data, (groupBy = settings.groupBy));
+    } = transformData(data, settings.groupBy);
 
     $hoursTable.bootstrapTable("load", monthlyTL).bootstrapTable("hideLoading");
 
+    if (!data.rows?.length) {
+      clearChart();
+      showChartState("noData");
+      return;
+    }
     drawChart(monthlyCD);
+    showChartState(null);
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    showChartState("error");
+    apiError(err);
+  } finally {
+    $hoursTable.bootstrapTable("hideLoading");
   }
 }
 
@@ -346,7 +249,7 @@ function transformData(data, groupBy = "day") {
         data.metadata.firstIncompleteDate,
       ).getTime();
     }
-    timeline = data.rows.map((d) => {
+    timeline = (data.rows ?? []).map((d) => {
       const timestamp = new Date(d.keys[0]).getTime();
       const dt = new Date(d.keys[0]);
       const yyyy = dt.toISOString().slice(0, 4);
@@ -374,7 +277,7 @@ function transformData(data, groupBy = "day") {
       ).getTime();
     }
     const monthMap = new Map();
-    data.rows.forEach((d) => {
+    (data.rows ?? []).forEach((d) => {
       const dt = new Date(d.keys[0]);
       const yyyy = dt.getUTCFullYear().toString();
       const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
@@ -434,10 +337,11 @@ function clearChart() {
 
 function drawChart(chartData) {
   let columns = [];
+  const tokens = chartColors();
   let colors = {
-    clicks: "#4285f4",
-    impressions: "#5e35b1",
-    ctr: "#00897b",
+    clicks: tokens.clicks,
+    impressions: tokens.impressions,
+    ctr: tokens.ctr,
   };
 
   columns.push(chartData.timeseries);
@@ -450,15 +354,15 @@ function drawChart(chartData) {
       show: false,
     },
     padding: {
-      left: 70,
-      right: 70,
+      left: 75,
+      right: 85,
     },
     data: {
       x: "x",
       columns: columns,
       colors: colors,
       order: "desc",
-      type: "line",
+      type: line(),
       axes: {
         clicks: "y",
         impressions: "y2",
@@ -468,7 +372,7 @@ function drawChart(chartData) {
     tooltip: {
       format: {
         value: function (value, ratio, id, index) {
-          return parseFloat(value).toLocaleString();
+          return numberFormat(value);
         },
         title: function (x) {
           if (settings.groupBy == "day") {
@@ -480,37 +384,32 @@ function drawChart(chartData) {
     },
     axis: {
       y: {
-        label: "clicks",
+        label: { text: "clicks", position: "outer-middle" },
         padding: {
-          top: 0,
+          top: 10,
           bottom: 0,
         },
         min: 0,
-        show: document.body.clientWidth > 767,
+        show: true,
         tick: {
           fit: true,
-          format: function (d) {
-            return d.toLocaleString();
-          },
+          format: numberFormat,
         },
       },
       y2: {
-        label: "impressions",
+        label: { text: "impressions", position: "outer-middle" },
         padding: {
-          top: 0,
+          top: 10,
           bottom: 0,
         },
         min: 0,
-        show: document.body.clientWidth > 767,
+        show: true,
         tick: {
           fit: true,
-          format: function (d) {
-            return d.toLocaleString();
-          },
+          format: numberFormat,
         },
       },
       x: {
-        label: settings.groupBy == "day" ? "by day" : "by month",
         padding: {
           left: 0,
           right: 0,
@@ -526,106 +425,19 @@ function drawChart(chartData) {
   getEvents();
 }
 
-async function setClipboard(text) {
-  const type = "text/plain";
-  const blob = new Blob([text], { type });
-  const data = [new ClipboardItem({ [type]: blob })];
-  await navigator.clipboard.write(data);
-}
-
-function getNestedProperty(obj, path) {
-  return path.split(".").reduce((acc, part) => acc && acc[part], obj);
-}
-
-// Function to filter selections based on visible columns and use column titles in the output
-function filterVisibleColumns(selections, columns) {
-  // Create a mapping of field paths to titles for visible columns
-  const columnMap = columns
-    .filter((column) => column.visible)
-    .reduce((map, column) => {
-      map[column.field] = column.title;
-      return map;
-    }, {});
-
-  // Filter each selection to include only data from visible columns
-  const filteredSelections = selections.map((selection) => {
-    const filteredData = {};
-    Object.keys(columnMap).forEach((field) => {
-      const value = getNestedProperty(selection, field);
-      if (value !== undefined) {
-        // Use the title as the key in the output object
-        filteredData[columnMap[field]] = value;
-      }
-    });
-    return filteredData;
-  });
-
-  return filteredSelections;
-}
-
-function getGSheetClipboard(table) {
-  let filteredSelections = filterVisibleColumns(table.data, table.columns);
-  let formatters = [];
-  let output = table.columns
-    .map((col) => {
-      formatters.push(col.formatter);
-      if (col.visible) {
-        return col.title;
-      }
-    })
-    .filter((col) => col)
-    .join("\t");
-  output += "\n";
-  output += filteredSelections
-    .map((col) => {
-      return Object.values(col)
-        .map((data, index) => {
-          let formatter = formatters[index];
-          if (!formatter) {
-            return data;
-          }
-          return formatter(data);
-        })
-        .join("\t");
-    })
-    .join("\n");
-  return output;
-}
-
-function tableButtons() {
-  return {
-    btnGSheetClipboard: {
-      text: "sheets clipboard",
-      icon: "bi-file-spreadsheet",
-      event: function () {
-        let text = getGSheetClipboard(this);
-        setClipboard(text);
-      },
-      attributes: {
-        title: "copy selected rows for google sheets",
-      },
-    },
-  };
+function tableButtons(name) {
+  return exportButtons(settings, name);
 }
 
 function eventsTableButtons() {
   return {
-    btnGSheetClipboard: {
-      text: "sheets clipboard",
-      icon: "bi-file-spreadsheet",
-      event: function () {
-        let text = getGSheetClipboard(this);
-        setClipboard(text);
-      },
-      attributes: {
-        title: "copy selected rows for google sheets",
-      },
-    },
+    ...exportButtons(settings, "events"),
     btnRemove: {
-      text: "remove events",
+      text: "Remove selected events",
       icon: "bi-trash",
       event: function () {
         let rows = $eventsTable.bootstrapTable("getSelections");
+        if (!rows.length) return;
         let ids = rows.map((row) => row.id);
         $eventsTable.bootstrapTable("remove", {
           field: "id",
@@ -639,9 +451,13 @@ function eventsTableButtons() {
           chart.flush();
         }, 1000);
         saveEvents();
+        updateRemoveButton();
+        showNotice(rows.length === 1 ? "Event removed" : `${rows.length} events removed`);
       },
       attributes: {
-        title: "delete selected events",
+        title: "Remove the ticked events",
+        "aria-label": "Remove the ticked events",
+        disabled: "disabled",
       },
     },
   };
@@ -683,6 +499,8 @@ let hoursColumns = [
   {
     field: "clicks",
     title: "clicks",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -691,6 +509,8 @@ let hoursColumns = [
   {
     field: "impressions",
     title: "impressions",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -723,10 +543,14 @@ let pagesColumns = [
     visible: true,
     searchable: true,
     align: "left",
+    formatter: (value) => `${escapeHtml(value)}${pageActionButtons(value)}`,
+    suppressFormatterExport: true,
   },
   {
     field: "clicks",
     title: "clicks",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -735,6 +559,8 @@ let pagesColumns = [
   {
     field: "impressions",
     title: "impressions",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -790,11 +616,13 @@ let eventsColumns = [
   },
   {
     field: "property",
-    title: "property",
+    title: "applies to",
     sortable: false,
     visible: true,
     searchable: true,
     align: "left",
+    formatter: (value) => (value === "all" ? "all properties" : escapeHtml(value)),
+    suppressFormatterExport: true,
   },
 ];
 
@@ -810,36 +638,9 @@ function dateFormat(value) {
   return dtf.format(new Date(Number(value)));
 }
 
-function toLocaleString(value) {
-  if (!value) return "";
-  let d = new Date(Number(value));
-  return d.toLocaleString();
-}
-
-function getLocalISOStringSlice(ts) {
-  const now = new Date(ts);
-  const offset = now.getTimezoneOffset(); // in minutes
-  const localTime = new Date(now.getTime() - offset * 60000);
-  return localTime.toISOString().slice(0, 16);
-}
-
-function ctrFormat(value) {
-  const num = Number(value);
-  if (!isFinite(num) || num === 0) return "0.0%";
-  return `${(num * 100).toFixed(1)}%`;
-}
-
-function sanitizeFilename(input) {
-  const illegalRe = /[\\\/:*?"<>|\x00-\x1F]/g;
-  return input.replace(illegalRe, "_");
-}
-
-function generateFilename(name) {
-  return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
-}
-
 async function generateEventsTable() {
   $eventsTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#eventstable-toolbar",
     multipleSelectRow: true,
     clickToSelect: true,
@@ -853,13 +654,6 @@ async function generateEventsTable() {
     search: true,
     columns: eventsColumns,
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("events");
-      },
-    },
     onCheckSome: checkSomeEvents,
     onCheck: checkEvent,
     onCheckAll: checkAllEvents,
@@ -868,7 +662,18 @@ async function generateEventsTable() {
     onUncheckAll: unCheckAllEvents,
     sortOrder: "desc",
     sortName: "from",
+    formatNoMatches: () =>
+      "No events yet — add one above, or import Google updates on the Options page.",
   });
+  $eventsTable.on(
+    "check.bs.table uncheck.bs.table check-all.bs.table uncheck-all.bs.table check-some.bs.table uncheck-some.bs.table post-body.bs.table",
+    updateRemoveButton,
+  );
+}
+
+function updateRemoveButton() {
+  const n = $eventsTable.bootstrapTable("getSelections").length;
+  $('#eventsTab button[name="btnRemove"]').prop("disabled", n === 0);
 }
 function unCheckEvent(row, $element) {
   unCheckSomeEvents([row]);
@@ -889,7 +694,10 @@ function checkAllEvents(rowsAfter, rowsBefore) {
   processEvents(rowsAfter, true);
 }
 function processEvents(rows, checked) {
-  let gridColor = checked ? "#e20074" : "#aaaaaa";
+  const css = getComputedStyle(document.documentElement);
+  let gridColor = css
+    .getPropertyValue(checked ? "--sa-event-highlight" : "--sa-event-muted")
+    .trim();
   rows.forEach((row) => {
     let index;
     if (!row.to || row.from == row.to) {
@@ -906,6 +714,7 @@ function processEvents(rows, checked) {
 
 async function generatePagesTable() {
   $pagesTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#pagestable-toolbar",
     uniqueId: "page",
     classes: "table table-hover",
@@ -914,17 +723,11 @@ async function generatePagesTable() {
     pageSize: 100,
     pagination: true,
     showRefresh: false,
-    buttons: tableButtons,
+    buttons: () => tableButtons("pages"),
     search: true,
     columns: pagesColumns,
+    rowStyle: () => ({ classes: "action-link" }),
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("pages");
-      },
-    },
     sortOrder: "desc",
     sortName: "clicks",
   });
@@ -941,6 +744,7 @@ function rowStyle(row, index) {
 
 async function generateHoursTable() {
   $hoursTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#hourstable-toolbar",
     uniqueId: "timestamp",
     classes: "table table-hover",
@@ -948,44 +752,12 @@ async function generateHoursTable() {
     pageSize: settings.hours,
     rowStyle: rowStyle,
     showRefresh: false,
-    buttons: tableButtons,
+    buttons: () => tableButtons("timeline"),
     columns: hoursColumns,
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("timeline");
-      },
-    },
     sortOrder: "desc",
     sortName: "timestamp",
   });
-}
-
-function addFilter(name, value) {
-  let u = new URL(document.location.href);
-  if (u.searchParams.has(name)) {
-    u.searchParams.set(name, value);
-  } else {
-    u.searchParams.append(name, value);
-  }
-  history.pushState(null, null, u.search);
-  currentURL = new URL(document.location);
-}
-function removeFilter(name) {
-  let u = new URL(document.location.href);
-  u.searchParams.delete(name);
-  if (u.search) {
-    history.pushState(null, null, u.search);
-  } else {
-    history.pushState(
-      null,
-      null,
-      document.location.origin + document.location.pathname,
-    );
-  }
-  currentURL = new URL(document.location);
 }
 
 function getYesterday() {
@@ -996,55 +768,6 @@ function getYesterday() {
   to = to - 1000 * 60 * 60 * 1;
 
   return { from, to };
-}
-
-async function checkAuth() {
-  if (document.visibilityState !== "visible") {
-    return;
-  }
-  chrome.identity.getAuthToken({ interactive: false }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      $("#auth_dropdown")
-        .removeClass("btn-outline-primary")
-        .removeClass("btn-outline-success")
-        .addClass("btn-outline-danger");
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
-    /*
-    listSites();
-    if (settings.siteUrl) {
-      getTimeline();
-      getPages();
-    }
-    */
-  });
-}
-
-let dimensionsFilterOperators = {
-  "*": "contains",
-  "-": "notContains",
-  "=": "equals",
-  "!": "notEquals",
-  "~": "includingRegex",
-  _: "excludingRegex",
-};
-function assemblePageFilters() {
-  if (!settings.page) {
-    return [];
-  }
-  if (settings.page.length < 2) {
-    return [];
-  }
-  let operator = dimensionsFilterOperators[settings.page[0]];
-  let dimension = "page";
-  let expression = settings.page.slice(1);
-
-  return [{ dimension, operator, expression }];
 }
 
 async function saveEvents() {
@@ -1063,7 +786,7 @@ async function saveEvents() {
 async function getEvents() {
   chrome.storage.local.get(["events"], (result) => {
     if (!result.events) {
-      console.error("no events found");
+      console.debug("no events found");
       return;
     }
     $eventsTable.bootstrapTable("load", result.events);
@@ -1103,94 +826,121 @@ function addEvents(rows) {
     });
 }
 
+function loadAll() {
+  listSites();
+  getTimeline();
+  getPages();
+}
+
+function showDayColumn() {
+  $hoursTable.bootstrapTable(settings.groupBy == "day" ? "showColumn" : "hideColumn", "day");
+}
+
+/** Reloads chart and both tables for the current settings. */
+function reloadAll() {
+  clearChart();
+  if (!settings.auth.token) return;
+  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  getTimeline();
+  getPages();
+}
+
+/** Applies a URL filter (settings.page format, or null to remove) and reloads. */
+function setPageFilter(page) {
+  settings.page = page || null;
+  if (settings.page) addFilter("page", settings.page);
+  else removeFilter("page");
+  syncPageFilterUi(settings.page);
+  pageFilterModal.hide();
+  reloadAll();
+}
+
+/** Back/forward: take the whole state from the URL again (defaults as in `settings`). */
+function syncFromUrl(params) {
+  readSharedUrlState(settings, params);
+  settings.from = params.get("from") || `${new Date().getFullYear()}-01-01`;
+  settings.to = params.get("to") || new Date().toISOString().slice(0, 10);
+  settings.groupBy = params.get("groupBy") || "day";
+  settings.dataState = params.get("dataState") || "ALL";
+  $("#from").val(settings.from);
+  $("#to").val(settings.to);
+  $("#from, #to").removeClass("is-invalid");
+  $("#groupBy").val(settings.groupBy);
+  showDayColumn();
+  reloadAll();
+}
+
+function clearAll() {
+  clearChart();
+  $pagesTable.bootstrapTable("removeAll");
+  $hoursTable.bootstrapTable("removeAll");
+}
+
+const isoDay = (d) => getLocalISOStringSlice(d).slice(0, 10);
+
+/** Sets the timeframe (YYYY-MM-DD strings) and reloads chart and tables. */
+function applyRange({ from, to }) {
+  $("#from").val(from);
+  $("#to").val(to);
+  const valid = from <= to;
+  $("#from, #to").toggleClass("is-invalid", !valid);
+  if (!valid) {
+    showNotice("“From” must be on or before “to”", 3000);
+    return;
+  }
+  if (settings.from === from && settings.to === to) return;
+  settings.from = from;
+  settings.to = to;
+  addFilters({ from, to });
+
+  clearChart();
+  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  getTimeline();
+  getPages();
+}
+
+/** Quick ranges; Search Console keeps 16 months of daily data. */
+function dayPresets() {
+  const ago = ({ days = 0, months = 0 }) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - months);
+    d.setDate(d.getDate() - days);
+    return isoDay(d);
+  };
+  const today = () => isoDay(new Date());
+  return [
+    { label: "Last 7 days", range: () => ({ from: ago({ days: 6 }), to: today() }) },
+    { label: "Last 28 days", range: () => ({ from: ago({ days: 27 }), to: today() }) },
+    { label: "Last 3 months", range: () => ({ from: ago({ months: 3 }), to: today() }) },
+    { label: "This year", range: () => ({ from: `${new Date().getFullYear()}-01-01`, to: today() }) },
+    { label: "Last 12 months", range: () => ({ from: ago({ months: 12 }), to: today() }) },
+    { label: "Last 16 months (maximum)", range: () => ({ from: ago({ months: 16 }), to: today() }) },
+  ];
+}
+
 async function init() {
-  chrome.identity.getAuthToken({ interactive: false }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      $("#auth_dropdown")
-        .removeClass("btn-outline-primary")
-        .removeClass("btn-outline-success")
-        .addClass("btn-outline-danger");
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
+  initAuth(settings, { onSignIn: loadAll, onSignOut: clearAll });
 
-    listSites();
-    if (settings.siteUrl) {
-      getTimeline();
-      getPages();
-    }
-  });
-  document.addEventListener("visibilitychange", checkAuth);
-
-  $("#property").attr("placeholder", settings.siteUrl);
+  showProperty(settings.siteUrl);
   $("#type").val(settings.type);
   $("#groupBy").val(settings.groupBy);
-  if (settings.siteUrl) {
-    $("#propertyBtn").text(settings.siteUrl);
-  }
 
   $("#from").val(settings.from);
   $("#to").val(settings.to);
-  $("#from").on("blur", function () {
-    let from = $(this).val();
-    if (settings.from == from) {
-      return;
-    }
-    settings.from = from;
-    addFilter("from", settings.from);
-
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-    getTimeline();
-    getPages();
+  $("#from, #to").on("change", function () {
+    const value = $(this).val();
+    if (!value) return;
+    applyRange({ ...settings, [this.id]: value });
   });
-
-  $("#to").on("blur", function () {
-    let to = $(this).val();
-    if (settings.to == to) {
-      return;
-    }
-    settings.to = to;
-    addFilter("to", settings.to);
-
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-    getTimeline();
-    getPages();
-  });
+  initRangePresets(dayPresets(), applyRange);
 
   generateHoursTable();
   generatePagesTable();
   generateEventsTable();
 
-  $(".nav-tabs").on("click", ".nav-item", function (e) {
-    e.preventDefault(); // Prevent the default link behavior
-
-    let id = $(this).data("id");
-    $tabs.removeClass("visible").addClass("invisible d-none");
-    $(`#${id}Tab`).removeClass("invisible d-none").addClass("visible");
-
-    // Remove 'active' from all nav links in the same nav-tabs container
-    $(this)
-      .closest(".nav-tabs")
-      .find(".nav-link")
-      .removeClass("active text-primary")
-      .addClass("text-secondary");
-
-    // Add 'active' to the clicked nav-item's nav-link
-    $(this)
-      .find(".nav-link")
-      .removeClass("text-secondary")
-      .addClass("active text-primary");
-  });
+  initTabs();
 
   $("#type").on("change", function () {
     let type = $(this).val();
@@ -1207,12 +957,7 @@ async function init() {
     settings.groupBy = groupBy;
     addFilter("groupBy", groupBy);
     getTimeline();
-
-    if (settings.groupBy == "day") {
-      $hoursTable.bootstrapTable("showColumn", "day");
-    } else {
-      $hoursTable.bootstrapTable("hideColumn", "day");
-    }
+    showDayColumn();
   });
 
   $("#property").on("change", function () {
@@ -1222,6 +967,7 @@ async function init() {
       return;
     }
     if (!settings.properties.includes(selectedValue)) {
+      showProperty(null, false);
       return;
     }
     clearChart();
@@ -1229,80 +975,45 @@ async function init() {
     $hoursTable.bootstrapTable("removeAll");
 
     settings.siteUrl = selectedValue;
-    $("#property").attr("placeholder", settings.siteUrl);
-    $("#property").val("");
-    $("#propertyBtn").text(settings.siteUrl);
+    showProperty(settings.siteUrl);
+    $("#property").val("").trigger("blur");
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
   });
 
-  $("input[type='datetime-local']").on("change", function () {
-    let val = $(this).val();
-    let id = $(this).attr("id");
-    if (!val) return;
+  syncPageFilterUi(settings.page);
 
-    const date = new Date(val);
-    date.setMinutes(0);
-    date.setSeconds(0);
-    date.setMilliseconds(0);
-
-    // Format back to datetime-local string
-    const pad = (n) => String(n).padStart(2, "0");
-    const formatted = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
-
-    $(this).val(formatted);
-    settings[id] = date.getTime();
-    addFilter(id, formatted);
-
-    if (chart) {
-      chart.regions.remove();
-    }
-
-    $pagesTable.bootstrapTable("removeAll");
-    if (chart && settings.from < settings.to) {
-      getPages();
-    }
+  initPageFilterModal(function () {
+    const value = $("#floatingPageFilterInput").val();
+    setPageFilter(value ? `${$("#urlFilterMode").val()}${value}` : null);
   });
-
-  if (settings.page) {
-    $("#urlFilterMode").val(dimensionsFilterOperators[settings.page[0]]);
-    $("#floatingPageFilterInput").val(settings.page.slice(1));
-  }
-
-  $("#applyPageFilter").on("click", function () {
-    let type = $("#urlFilterMode").val();
-    let page = $("#floatingPageFilterInput").val();
-
-    if (!page) {
-      settings.page = null;
-      removeFilter("page");
-    } else {
-      settings.page = `${type}${page}`;
-      addFilter("page", settings.page);
-    }
-
-    pageFilterModal.hide();
-
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-    getTimeline();
-    getPages();
-  });
+  initPageFilterActions((url) => setPageFilter(pageFilterFor(url)));
+  initClipboardIcons();
+  initHistory(syncFromUrl);
 
   getEvents();
 
-  $("#addEvent").on("click", function () {
+  $("#eventForm").on("input change", ".is-invalid", function () {
+    $(this).removeClass("is-invalid");
+  });
+  $("#eventForm").on("submit", function (e) {
+    e.preventDefault();
     let eventDateFrom = $("#event-date-from").val();
-    if (!eventDateFrom) {
-      console.error("no event start set");
+    let eventDateTo = $("#event-date-to").val();
+    let eventTitle = $("#event-title").val()?.trim();
+    const invalid = {
+      "#event-date-from": !eventDateFrom,
+      "#event-date-to": Boolean(eventDateTo && eventDateFrom && eventDateTo < eventDateFrom),
+      "#event-title": !eventTitle,
+    };
+    Object.entries(invalid).forEach(([sel, bad]) => $(sel).toggleClass("is-invalid", bad));
+    const firstInvalid = Object.keys(invalid).find((sel) => invalid[sel]);
+    if (firstInvalid) {
+      $(firstInvalid).trigger("focus");
       return;
     }
     let eventId = crypto.randomUUID();
-    let eventDateTo = $("#event-date-to").val();
-    let eventTitle = $("#event-title").val()?.trim();
     let eventCategory = $("#event-category").val()?.trim();
     let eventPropertySelection = $("#event-property").val()?.trim();
     let eventProperty =
@@ -1320,17 +1031,13 @@ async function init() {
       },
     ]);
     saveEvents();
+    $("#event-date-to, #event-title, #event-category").val("");
+    $("#event-title").trigger("focus");
+    showNotice(`Event “${eventTitle}” added`);
   });
 
-  $propertyBtn.on("click", function () {
-    $propertyBtn.removeClass("d-block").addClass("d-none");
-    $propertyInput.removeClass("d-none").addClass("d-block").focus();
-  });
-
-  // input blur → hide input, show button
-  $propertyInput.on("blur", function () {
-    $propertyInput.removeClass("d-block").addClass("d-none");
-    $propertyBtn.removeClass("d-none").addClass("d-block");
-  });
+  initPropertyPicker();
+  initViewSwitcher();
+  initKeyboardShortcuts();
 }
 init();

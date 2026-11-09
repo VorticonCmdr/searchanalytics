@@ -1,29 +1,74 @@
 <!doctype html>
-<html>
+<html lang="en">
     <head>
-        <title>SAa Options</title>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Options – Search Analytics alternative</title>
+        <script src="/js/theme.js"></script>
     </head>
-    <body class="p-4">
-        <div class="container">
-            <h3>Aggregation Settings</h3>
-            <div class="mb-3">
-                <label for="idRegex" class="form-label"
-                    >ID Extraction Regex (Capture Group 1)</label
-                >
-                <input
-                    type="text"
-                    class="form-control"
-                    id="idRegex"
-                    placeholder="/product/([0-9]+)"
-                />
-                <div class="form-text">
-                    If the regex matches, the first capture group will be used
-                    as ID. Otherwise, the full URL is used.
+    <body>
+        <nav class="navbar bg-body border-bottom sa-navbar">
+            <div class="container-fluid gap-3">
+                <span class="navbar-brand d-flex align-items-center gap-2 fs-6 fw-semibold">
+                    <img src="/icons/logo-180.png" alt="" width="32" height="32" />
+                    Search Analytics alternative · Options
+                </span>
+                <div class="d-flex gap-2">
+                    <a class="btn btn-outline-secondary" href="/html/index.html"><i class="bi bi-clock me-1" aria-hidden="true"></i>Property by hour</a>
+                    <a class="btn btn-outline-secondary" href="/html/days.html"><i class="bi bi-calendar3 me-1" aria-hidden="true"></i>Property by day</a>
+                    <a class="btn btn-outline-secondary" href="/html/hourly.html"><i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>Pages by hour</a>
                 </div>
             </div>
-            <button id="save" class="btn btn-primary">Save Settings</button>
-            <div id="status" class="mt-2"></div>
-        </div>
+        </nav>
+
+        <main class="container py-4 d-flex flex-column gap-4" style="max-width: 60rem">
+            <section class="card sa-card">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-1">Page aggregation</h2>
+                    <p class="text-body-secondary">
+                        In <em>Property by hour → Pages</em>, URLs that share an ID are combined into one row —
+                        useful when the same article is reachable under several URLs (AMP, tracking parameters, slugs).
+                    </p>
+                    <form id="aggregationForm" novalidate>
+                        <div class="mb-3">
+                            <label for="idRegex" class="form-label fw-semibold">ID extraction regex</label>
+                            <input type="text" class="form-control font-monospace" id="idRegex" placeholder="/news/([0-9]+)/" spellcheck="false" autocomplete="off" />
+                            <div class="invalid-feedback" id="idRegexError"></div>
+                            <div class="form-text">
+                                The first capture group <code>( … )</code> becomes the ID. URLs that don’t match keep their full URL.
+                                Leave empty to turn aggregation off.
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sampleUrl" class="form-label">Try it with a URL</label>
+                            <input type="url" class="form-control" id="sampleUrl" placeholder="https://www.example.com/news/12345/big-story?amp=1" spellcheck="false" />
+                            <div id="sampleResult" class="form-text" aria-live="polite"></div>
+                        </div>
+                        <div class="d-flex align-items-center gap-3">
+                            <button id="save" type="submit" class="btn btn-primary">Save</button>
+                            <div id="status" class="text-success small" role="status" aria-live="polite"></div>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <section class="card sa-card">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-1">Google Search Status events</h2>
+                    <p class="text-body-secondary">
+                        Import algorithm updates, core updates and incidents from the
+                        <a href="https://status.search.google.com" target="_blank" rel="noopener">Google Search Status Dashboard</a>
+                        into your event list. They appear as bands and lines on the <em>Property by day</em> chart.
+                    </p>
+                    <div class="d-flex align-items-center gap-2">
+                        <button id="fetchEvents" class="btn btn-outline-secondary"><i class="bi bi-cloud-download me-1" aria-hidden="true"></i>Fetch events</button>
+                        <button id="importEvents" class="btn btn-primary" disabled>Import new events</button>
+                    </div>
+                    <div id="importStatus" class="mt-2 text-body-secondary small" role="status" aria-live="polite"></div>
+                    <div id="importPreview" class="mt-3"></div>
+                </div>
+            </section>
+        </main>
         <script type="module" src="/js/options.js"></script>
     </body>
 </html>

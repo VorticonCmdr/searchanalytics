@@ -2,13 +2,9 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1, user-scalable=0"
-        />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-        <title>Search Analytics alternative</title>
+        <title>Pages by hour – Search Analytics alternative</title>
 
         <link
             rel="stylesheet"
@@ -20,276 +16,213 @@
             href="/css/billboard.dark.min.css"
             media="(prefers-color-scheme: dark)"
         />
+        <script src="/js/theme.js"></script>
     </head>
 
-    <body class="bg-better-gray">
-        <nav class="navbar navbar-expand-lg bg-white">
-            <div class="container-fluid">
-                <div class="dropdown">
-                    <span
-                        class="navbar-brand"
-                        data-bs-toggle="dropdown"
-                        aria-expanded="false"
-                    >
-                        <img
-                            id="logo"
-                            src="/icons/logo-180.png"
-                            alt="logo"
-                            width="40"
-                            height="40"
-                        />
-                    </span>
+    <body>
+        <nav class="navbar bg-body border-bottom sa-navbar">
+            <div class="container-fluid flex-nowrap gap-3">
+                <div class="dropdown d-flex align-items-center" id="viewSwitch">
+                    <img src="/icons/logo-180.png" alt="" width="32" height="32" class="me-2" />
+                    <button type="button" class="btn btn-link text-body text-decoration-none fw-semibold dropdown-toggle sa-view-switch"
+                        data-bs-toggle="dropdown" aria-expanded="false" title="Switch view">
+                        Pages by hour
+                    </button>
                     <ul class="dropdown-menu">
-                        <li>
-                            <a class="dropdown-item" href="/html/index.html"
-                                >property by hour</a
-                            >
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="/html/days.html"
-                                >property by day</a
-                            >
-                        </li>
-                        <li>
-                            <a class="dropdown-item active" href="#"
-                                >pages by hour</a
-                            >
-                        </li>
+                        <li><h6 class="dropdown-header">Views</h6></li>
+                        <li><a class="dropdown-item" data-view-link href="/html/index.html"><i class="bi bi-clock me-2" aria-hidden="true"></i>Property by hour</a></li>
+                        <li><a class="dropdown-item" data-view-link href="/html/days.html"><i class="bi bi-calendar3 me-2" aria-hidden="true"></i>Property by day</a></li>
+                        <li><a class="dropdown-item active" aria-current="page" href="#"><i class="bi bi-file-earmark-text me-2" aria-hidden="true"></i>Pages by hour</a></li>
+                        <li><hr class="dropdown-divider" /></li>
+                        <li><button type="button" class="dropdown-item" id="openOptions"><i class="bi bi-gear me-2" aria-hidden="true"></i>Options</button></li>
                     </ul>
                 </div>
-                <div class="input-group">
-                    <div>
-                        <select id="type" class="form-select">
-                            <option value="discover">Discover</option>
-                            <option value="googleNews">Google News</option>
-                            <option value="web">Web (search)</option>
-                            <option value="news">News (search)</option>
-                            <option value="image">Image (search)</option>
-                            <option value="video">Video (search)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <select id="metric" class="form-select">
-                            <option value="clicks">Clicks</option>
-                            <option value="impressions">Impressions</option>
-                            <option value="ctr">CTR</option>
-                        </select>
-                    </div>
+
+                <div class="vr"></div>
+
+                <div class="d-flex align-items-center gap-2 me-auto">
+                    <select id="type" class="form-select" aria-label="Search type" title="Search type">
+                        <option value="discover">Discover</option>
+                        <option value="googleNews">Google News</option>
+                        <option value="web">Web search</option>
+                        <option value="news">News search</option>
+                        <option value="image">Image search</option>
+                        <option value="video">Video search</option>
+                    </select>
+                    <select id="metric" class="form-select" aria-label="Metric" title="Metric">
+                        <option value="clicks">Clicks</option>
+                        <option value="impressions">Impressions</option>
+                        <option value="ctr">CTR</option>
+                    </select>
                     <div>
                         <button
                             type="button"
                             id="propertyBtn"
                             class="btn btn-outline-secondary textnowrap d-block"
-                            data-bs-toggle="popover"
-                            data-bs-trigger="hover"
-                            data-bs-placement="bottom"
-                            data-bs-content="select GSC property here"
+                            title="Select Search Console property"
                         >
-                            select property
-                            <i class="bi bi-caret-down-fill"></i>
+                            <i class="bi bi-globe2 me-1" aria-hidden="true"></i>Select property
+                            <i class="bi bi-chevron-down small ms-1" aria-hidden="true"></i>
                         </button>
                         <input
                             type="search"
                             class="form-control d-none"
-                            placeholder="property"
-                            aria-label="property"
+                            placeholder="Search properties"
+                            aria-label="Search Console property"
                             id="property"
                             list="properties-list"
                         />
                         <datalist id="properties-list"></datalist>
                     </div>
-                    <div>
+                    <div class="btn-group">
                         <button
                             type="button"
                             id="pageFilter"
+                            aria-pressed="false"
                             class="btn btn-outline-secondary textnowrap"
                             data-bs-toggle="modal"
                             data-bs-target="#pageFilterModal"
+                            title="Filter all data by URL"
                         >
-                            url filter
+                            <i class="bi bi-funnel me-1" aria-hidden="true"></i><span id="pageFilterLabel" class="text-truncate">URL filter</span>
+                        </button>
+                        <button type="button" id="clearPageFilter" class="btn btn-primary d-none" aria-label="Clear URL filter" title="Clear URL filter">
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>
 
-                <div class="btn-group" role="group">
+                <div class="btn-group">
                     <button
                         id="auth_dropdown"
                         type="button"
-                        class="btn btn-outline-primary dropdown-toggle"
+                        class="btn btn-outline-secondary dropdown-toggle textnowrap"
                         data-bs-toggle="dropdown"
                         aria-expanded="false"
                     >
-                        authenticate
+                        Checking sign-in…
                     </button>
-                    <ul class="dropdown-menu" data-bs-popper="static">
+                    <ul class="dropdown-menu dropdown-menu-end">
                         <li>
-                            <a
-                                class="dropdown-item"
-                                id="authorize_button"
-                                href="#"
-                                >refresh auth</a
-                            >
+                            <button type="button" class="dropdown-item" id="authorize_button">Sign in with Google</button>
                         </li>
                         <li>
-                            <a
-                                class="dropdown-item"
-                                id="signout_button"
-                                href="#"
-                                >sign out</a
-                            >
+                            <button type="button" class="dropdown-item" id="signout_button">Sign out</button>
                         </li>
                     </ul>
                 </div>
             </div>
         </nav>
 
-        <div class="container-fluid px-0">
-            <div id="chart-and-filter" class="my-2">
-                <div
-                    id="chart"
-                    class="bg-white"
-                    style="height: 400px; position: relative"
-                ></div>
-            </div>
-        </div>
-
-        <div class="container-fluid bg-white py-4 my-4">
-            <ul class="nav nav-tabs nav-justified">
-                <li data-id="hours" class="nav-item">
-                    <span
-                        class="nav-link text-primary"
-                        data-bs-toggle="popover"
-                        data-bs-trigger="hover"
-                        data-bs-placement="top"
-                        data-bs-content="performance by hour within all the available data"
-                        >hours</span
-                    >
-                </li>
-                <li data-id="pages" class="nav-item">
-                    <span
-                        class="nav-link active text-secondary"
-                        data-bs-toggle="popover"
-                        data-bs-trigger="hover"
-                        data-bs-placement="top"
-                        data-bs-content="url performance within the selected timeframe"
-                        >pages</span
-                    >
-                </li>
-            </ul>
-            <div class="border-start border-end">
-                <div id="hoursTab" class="tab invisible d-none">
-                    <div id="hourstable-toolbar" class="row">
-                        <div class="col px-0">
-                            <div class="input-group">
-                                <span
-                                    class="input-group-text"
-                                    id="from-description"
-                                    >pages from</span
-                                >
+        <main class="container-fluid py-3 d-flex flex-column gap-3">
+            <div id="notices"></div>
+            <section class="card sa-card" aria-label="Chart">
+                <div class="card-body p-2">
+                    <div id="chart-and-filter">
+                        <div id="chart" style="height: 400px"></div>
+                        <div id="chart-state" class="sa-chart-state d-none" aria-live="polite"></div>
+                    </div>
+                </div>
+            </section>
+            <section class="card sa-card">
+                <div class="card-header">
+                    <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button type="button" class="nav-link active" id="tab-pages" role="tab" data-id="pages"
+                                aria-controls="pagesTab" aria-selected="true" tabindex="0"
+                                title="Pages with impressions in the selected timeframe — tick pages to draw them">Pages</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button type="button" class="nav-link" id="tab-hours" role="tab" data-id="hours"
+                                aria-controls="hoursTab" aria-selected="false" tabindex="-1"
+                                title="Hourly values of the drawn pages (or of the whole property before any page is drawn)">Hours</button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body p-0">
+                    <div id="pagesTab" class="tab" role="tabpanel" aria-labelledby="tab-pages">
+                        <div id="pagestable-toolbar" class="d-flex align-items-center gap-2">
+                            <div class="input-group sa-range">
+                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown"
+                                    aria-expanded="false" title="Quick ranges">
+                                    <i class="bi bi-calendar-range" aria-hidden="true"></i><span class="visually-hidden">Quick ranges</span>
+                                </button>
+                                <ul class="dropdown-menu" data-range-presets></ul>
+                                <span class="input-group-text" id="from-description">Pages from</span>
                                 <input
                                     type="datetime-local"
                                     class="form-control"
                                     id="from"
+                                    aria-labelledby="from-description"
                                     step="3600"
                                 />
-                                <span
-                                    class="input-group-text"
-                                    id="to-description"
-                                    >to</span
-                                >
+                                <span class="input-group-text" id="to-description">to</span>
                                 <input
                                     type="datetime-local"
                                     class="form-control"
                                     id="to"
+                                    aria-labelledby="to-description"
                                     step="3600"
                                 />
                             </div>
+                            <button id="drawPages" type="button" class="btn btn-primary text-nowrap" disabled
+                                title="Draw the ticked pages on the chart">
+                                <i class="bi bi-graph-up" aria-hidden="true"></i> <span id="drawPagesLabel">Draw</span>
+                            </button>
                         </div>
+                        <table id="pagestable"></table>
                     </div>
-                    <table id="hourstable"></table>
-                </div>
 
-                <div id="pagesTab" class="tab visible">
-                    <div id="pagestable-toolbar" class="row"></div>
-                    <table id="pagestable"></table>
+                    <div id="hoursTab" class="tab d-none" role="tabpanel" aria-labelledby="tab-hours">
+                        <div id="hourstable-toolbar"></div>
+                        <table id="hourstable"></table>
+                    </div>
                 </div>
-            </div>
-        </div>
+            </section>
+        </main>
 
         <div
             class="modal fade"
             id="pageFilterModal"
-            data-bs-backdrop="static"
             data-bs-keyboard="true"
             tabindex="-1"
-            aria-labelledby="staticBackdropLabel"
+            aria-labelledby="pageFilterModalLabel"
             aria-hidden="true"
         >
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h1 class="modal-title fs-5" id="staticBackdropLabel">
-                            Page
-                        </h1>
-                        <button
-                            type="button"
-                            class="btn-close"
-                            data-bs-dismiss="modal"
-                            aria-label="Close"
-                        ></button>
+                        <h1 class="modal-title fs-5" id="pageFilterModalLabel">URL filter</h1>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
+                        <p class="text-body-secondary small">Applies to the chart and every table in this view.</p>
                         <div class="mb-3">
+                            <label for="urlFilterMode" class="form-label">Show URLs</label>
                             <select id="urlFilterMode" class="form-select">
-                                <option value="*">URLs containing</option>
-                                <option value="-">URLs not containing</option>
-                                <option value="=">Exact URL</option>
-                                <option value="!">Not exact URL</option>
-                                <option value="~">
-                                    Custom (matches regex)
-                                </option>
-                                <option value="_">
-                                    Custom (Doesn't match regex)
-                                </option>
+                                <option value="*">containing</option>
+                                <option value="-">not containing</option>
+                                <option value="=">equal to</option>
+                                <option value="!">not equal to</option>
+                                <option value="~">matching regex</option>
+                                <option value="_">not matching regex</option>
                             </select>
                         </div>
                         <div class="form-floating">
-                            <input
-                                type="search"
-                                class="form-control"
-                                id="floatingPageFilterInput"
-                                placeholder="https://www.example.com/"
-                            />
-                            <label for="floatingPageFilterInput"
-                                >https://www.example.com/</label
-                            >
+                            <input type="search" class="form-control" id="floatingPageFilterInput" placeholder="https://www.example.com/" />
+                            <label for="floatingPageFilterInput">URL or part of a URL</label>
                         </div>
-                        <div class="modal-footer border border-0">
-                            <button
-                                type="button"
-                                class="btn btn-link btn-light link-underline link-underline-opacity-0 link-underline-opacity-0-hover"
-                                data-bs-dismiss="modal"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                id="applyPageFilter"
-                                type="button"
-                                class="btn btn-primary"
-                            >
-                                Apply
-                            </button>
-                        </div>
+                        <div class="form-text">Leave empty and apply to remove the filter.</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button id="applyPageFilter" type="button" class="btn btn-primary">Apply filter</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <span
-            id="action-badge"
-            class="d-none badge text-bg-dark position-sticky bottom-0 start-50 translate-middle"
-            >URL copied to clipboard</span
-        >
+        <span id="action-badge" role="status" aria-live="polite" class="d-none badge text-bg-dark"></span>
 
         <script type="module" src="/js/gsc-hourly2.js"></script>
     </body>

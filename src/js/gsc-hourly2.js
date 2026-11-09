@@ -1,22 +1,58 @@
-import $ from 'jquery';
-import * as bootstrap from 'bootstrap';
-import bb from 'billboard.js';
-import 'd3';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import 'bootstrap-icons/font/bootstrap-icons.min.css';
-import 'bootstrap-table/dist/bootstrap-table.min.css';
-import '../css/searchanalytics.css';
-import 'tableexport.jquery.plugin';
-import 'bootstrap-table';
-import 'bootstrap-table/dist/extensions/export/bootstrap-table-export.min.js';
+import bb, { grid, line, regions } from "billboard.js";
+import {
+  $,
+  bootstrap,
+  MS_PER_DAY,
+  MS_PER_HOUR,
+  addFilter,
+  addFilters,
+  apiError,
+  assemblePageFilters,
+  chartColors,
+  clearError,
+  ctrFormat,
+  escapeHtml,
+  escapeRegex,
+  exportButtons,
+  getLocalISOStringSlice,
+  gscQuery,
+  gscQueryAll,
+  initAuth,
+  initClipboardIcons,
+  initHistory,
+  initKeyboardShortcuts,
+  initPageFilterActions,
+  initPageFilterModal,
+  initPropertyPicker,
+  initRangePresets,
+  initTabs,
+  initViewSwitcher,
+  loadProperties,
+  numberFormat,
+  pageActionButtons,
+  pageFilterFor,
+  parseTimestamp,
+  readSharedUrlState,
+  removeFilter,
+  setClipboard,
+  showChartState,
+  showNotice,
+  showProperty,
+  syncPageFilterUi,
+} from "./common.js";
 
-let currentURL = new URL(document.location);
+// billboard.js v4 ESM: the region (timeframe/event bands) and grid (event lines)
+// APIs are tree-shakable modules that must be registered before bb.generate().
+grid();
+regions();
+
+const currentURL = new URL(document.location);
 
 let settings = {
   properties: [],
   type: currentURL.searchParams.get("type") || "discover",
-  from: currentURL.searchParams.get("from") || null,
-  to: currentURL.searchParams.get("to") || null,
+  from: parseTimestamp(currentURL.searchParams.get("from")),
+  to: parseTimestamp(currentURL.searchParams.get("to")),
   auth: {
     token: null,
   },
@@ -28,145 +64,29 @@ let settings = {
   metric: currentURL.searchParams.get("metric") || "clicks",
 };
 
-const authorizeButton = document.getElementById("authorize_button");
-const signoutButton = document.getElementById("signout_button");
-const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
-let tokenClient;
-let gapiInited = false;
-let gisInited = false;
+let noticeTimer;
+const pageFilterModal = new bootstrap.Modal("#pageFilterModal", {});
 
 let chart;
 
 let $hoursTable = $("#hourstable");
 let $pagesTable = $("#pagestable");
-let $tabs = $(".tab");
-let $propertyBtn = $("#propertyBtn");
-let $propertyInput = $("#property");
 
-Date.prototype.getISOWeek = function () {
-  // Copy date so we don't modify the original
-  const date = new Date(
-    Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()),
-  );
-  // ISO week day (Monday=1, Sunday=7)
-  const dayNum = date.getUTCDay() || 7;
-  // Set to nearest Thursday: current date + 4 - current day number
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  // Year of the Thursday in question
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  // Calculate full weeks to nearest Thursday
-  const weekNo = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
-  return weekNo;
-};
-
-authorizeButton.onclick = function handleAuthClick() {
-  chrome.identity.getAuthToken({ interactive: true }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      console.error(
-        "Could not get auth token:",
-        chrome.runtime.lastError.message,
-      );
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
-    listSites();
-  });
-};
-
-signoutButton.onclick = function handleSignoutClick() {
-  chrome.identity.clearAllCachedAuthTokens(() => {
-    console.info("Signed out");
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll");
-    $hoursTable.bootstrapTable("removeAll");
-    $("#properties-list").empty();
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-success")
-      .addClass("btn-danger");
-  });
-};
-
-async function listSites() {
-  if (!settings.auth.token) {
-    console.error("No auth token");
-    return;
-  }
-  try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
-
-    settings.properties = [];
-    let selectsHTML = data?.siteEntry
-      ?.map((entry) => {
-        return entry.siteUrl.replace("sc-domain:", "sc-domain://");
-      })
-      ?.sort((a, b) => {
-        try {
-          const urlA = new URL(a);
-          const urlB = new URL(b);
-
-          const hostA = urlA.host.split(".").reverse().join(".");
-          const hostB = urlB.host.split(".").reverse().join(".");
-
-          if (hostA < hostB) return -1;
-          if (hostA > hostB) return 1;
-
-          const pathA = urlA.pathname.toLowerCase();
-          const pathB = urlB.pathname.toLowerCase();
-
-          if (pathA < pathB) return -1;
-          if (pathA > pathB) return 1;
-
-          return 0;
-        } catch (e) {
-          console.error("Invalid URL", a, b);
-          return 0;
-        }
-      })
-      ?.map((data) => {
-        let property = data.replace("sc-domain://", "sc-domain:");
-        if (settings.property == property) {
-          $("#property").val(settings.property);
-          getTimeline(settings.property);
-        }
-        settings.properties.push(property);
-        return `<option value="${property}"></option>`;
-      })
-      .join("\n");
-
-    $("#properties-list").html(selectsHTML);
-  } catch (err) {
-    console.error(`Error: ${err.message}`);
-  }
+function listSites() {
+  return loadProperties(settings);
 }
 
 async function getPages() {
+  if (!settings.siteUrl) {
+    $pagesTable.bootstrapTable("removeAll").bootstrapTable("hideLoading");
+    return;
+  }
   $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
 
-  if (!settings.from && !settings.to) {
-    console.error("timeframe not selected");
+  if (!settings.from || !settings.to) {
+    $pagesTable.bootstrapTable("hideLoading");
+    showNotice("Select a timeframe first", 3000);
     return;
   }
 
@@ -179,31 +99,14 @@ async function getPages() {
     endDate: `${new Date(settings.to).getFullYear()}-12-31`,
     startRow: 0,
     dimensions: ["HOUR", "PAGE"],
-    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
+    dimensionFilterGroups: [{ filters: assemblePageFilters(settings.page) }],
   };
 
   try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
+    const data = await gscQuery(settings.siteUrl, settings.auth.token, requestBody);
 
     if (!data.rows) {
+      settings.pages = [];
       $pagesTable.bootstrapTable("hideLoading");
       return;
     }
@@ -217,31 +120,68 @@ async function getPages() {
       };
     });
 
-    let { aggregatedPages } = aggregateByUrl(settings.pages);
+    // Metrics cover the selected timeframe; "first hour" is the first hour with data
+    // anywhere in the hourly window.
+    const firstHours = new Map();
+    settings.pages.forEach(({ page, timestamp }) => {
+      if (!(firstHours.get(page) <= timestamp)) firstHours.set(page, timestamp);
+    });
+    const inRange = settings.pages.filter(
+      (d) => d.timestamp >= settings.from && d.timestamp <= settings.to,
+    );
+    let { aggregatedPages } = aggregateByUrl(inRange);
+    aggregatedPages.forEach((p) => {
+      p.timestamp = firstHours.get(p.page);
+      // keep the swatch of pages that are already drawn
+      if (settings.selectedPages.includes(p.page)) p.color = chart?.data.colors()[p.page];
+      p.state = settings.selectedPages.includes(p.page);
+    });
 
     $pagesTable
       .bootstrapTable("load", aggregatedPages)
       .bootstrapTable("hideLoading");
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    apiError(err);
+  } finally {
+    $pagesTable.bootstrapTable("hideLoading");
   }
 }
 
+/** Makes the chart show exactly the ticked pages (adds new lines, removes unticked). */
 function drawSelections() {
-  let data = $pagesTable.bootstrapTable("getSelections");
+  if (!chart) return;
+  const data = $pagesTable.bootstrapTable("getSelections");
+  const previous = settings.selectedPages;
   settings.selectedPages = data.map((d) => d.page);
+  const unload = previous.filter((p) => !settings.selectedPages.includes(p));
+  const columns = data.map((d) => generatePageLine(d.page, settings.metric));
 
-  let chartData = {
-    columns: [],
-  };
-  data.forEach((d) => {
-    let series = generatePageLine(d.page, settings.metric);
-    chartData.columns.push(series);
-  });
-  chart.load(chartData);
-  colorTable();
-
+  if (columns.length) {
+    chart.load({ columns, unload, done: colorTable });
+  } else {
+    chart.unload({ ids: unload, done: colorTable });
+  }
+  showChartState(settings.selectedPages.length ? null : "selectPages");
   generateNewHoursTable();
+  updateDrawButton();
+}
+
+function checkedPages() {
+  return $pagesTable.bootstrapTable("getSelections").map((r) => r.page);
+}
+
+/** "Draw n pages" when the ticked set differs from what is drawn; disabled otherwise. */
+function updateDrawButton() {
+  const checked = checkedPages();
+  const drawn = settings.selectedPages;
+  const same =
+    checked.length === drawn.length && checked.every((p) => drawn.includes(p));
+  let label = "Draw";
+  if (same && checked.length) label = "Drawn";
+  else if (checked.length) label = `Draw ${checked.length} page${checked.length === 1 ? "" : "s"}`;
+  else if (drawn.length) label = "Clear chart";
+  $("#drawPagesLabel").text(label);
+  $("#drawPages").prop("disabled", same || !chart);
 }
 
 function generateNewHoursTable() {
@@ -249,7 +189,6 @@ function generateNewHoursTable() {
     (d) => settings.selectedPages.indexOf(d.page) > -1,
   );
   let pivotHours = pivotByTimestamp(filteredPages, settings.metric);
-  console.log(pivotHours);
   generateNewHoursTableColumns();
   $hoursTable.bootstrapTable("destroy");
   generateHoursTable();
@@ -298,7 +237,7 @@ function aggregateByUrl(rows) {
     page: entry.url,
     clicks: entry.clicks,
     impressions: entry.impressions,
-    ctr: entry.ctrSum / entry.count,
+    ctr: entry.impressions > 0 ? entry.clicks / entry.impressions : 0,
   }));
   return {
     aggregatedPages,
@@ -306,6 +245,17 @@ function aggregateByUrl(rows) {
 }
 
 async function getTimeline() {
+  if (!settings.siteUrl) {
+    $hoursTable.bootstrapTable("removeAll").bootstrapTable("hideLoading");
+    showChartState("noProperty");
+    return;
+  }
+  clearError();
+  showChartState("loading");
+  // The chart is regenerated below without page lines; clear the drawn set now (not
+  // after the await) so a concurrent getPages() doesn't restore ticks and swatches.
+  settings.selectedPages = [];
+  resetHoursTableColumns();
   $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
   const requestBody = {
     aggregationType: "AUTO",
@@ -316,41 +266,11 @@ async function getTimeline() {
     dataState: "HOURLY_ALL",
     startDate: `${new Date(settings.from).getFullYear()}-01-01`,
     endDate: `${new Date(settings.to).getFullYear()}-12-31`,
-    dimensionFilterGroups: [{ filters: assemblePageFilters() }],
+    dimensionFilterGroups: [{ filters: assemblePageFilters(settings.page) }],
   };
 
   try {
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(settings.siteUrl)}/searchAnalytics/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${settings.auth.token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      },
-    );
-
-    if (!response.ok) {
-      if (response.status == 401) {
-        console.error(`Unauthorized`);
-        clearChart();
-        $pagesTable.bootstrapTable("removeAll");
-        $hoursTable.bootstrapTable("removeAll");
-        $("#properties-list").empty();
-        $("#auth_dropdown")
-          .removeClass("btn-outline-primary")
-          .removeClass("btn-outline-success")
-          .addClass("btn-outline-danger");
-        return;
-      }
-      const error = await response.json();
-      console.error(`Error: ${error.error.message}`);
-      return;
-    }
-
-    const data = await response.json();
+    const data = await gscQuery(settings.siteUrl, settings.auth.token, requestBody);
 
     let firstIncompleteHour = data?.metadata?.firstIncompleteHour;
     let firstIncompleteHourTs = Infinity;
@@ -358,11 +278,13 @@ async function getTimeline() {
       firstIncompleteHourTs = new Date(firstIncompleteHour).getTime();
     }
 
-    if (!data.rows) {
+    if (!data.rows?.length) {
       $hoursTable.bootstrapTable("hideLoading");
+      clearChart();
+      showChartState("noData");
       return;
     }
-    const timeline = data.rows.map((d) => {
+    const timeline = (data.rows ?? []).map((d) => {
       let ts = new Date(d?.keys?.[0]).getTime();
       return {
         timestamp: ts,
@@ -377,8 +299,13 @@ async function getTimeline() {
     let chartData = generateHourlyGraphData(data);
     settings.timeseries = chartData.timeseries;
     drawChart(chartData);
+    showChartState("selectPages");
+    updateDrawButton();
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    showChartState("error");
+    apiError(err);
+  } finally {
+    $hoursTable.bootstrapTable("hideLoading");
   }
 }
 
@@ -487,18 +414,27 @@ function clearChart() {
   }
 }
 
+/** Shows a colour swatch for every drawn page (and none for the others). */
 function colorTable() {
-  let colors = chart.data.colors();
-  Object.keys(colors).forEach((key) => {
-    $(`[data-page="${key}"]`).val(colors[key]);
-  });
+  const colors = chart.data.colors();
+  const updates = $pagesTable
+    .bootstrapTable("getData", { unfiltered: true })
+    .map((row) => ({
+      id: row.page,
+      field: "color",
+      value: settings.selectedPages.includes(row.page) ? colors[row.page] : undefined,
+    }));
+  if (updates.length) $pagesTable.bootstrapTable("updateCellByUniqueId", updates);
 }
 
 function drawChart(chartData) {
   let columns = [];
+  // These two series only carry the x axis for the per-page lines. They are hidden,
+  // but chart.focus() defocuses (and thereby reveals) hidden series at 30% opacity,
+  // so draw them transparent.
   let colors = {
-    "clicks last 7 days": "#4285f4",
-    "incomplete clicks": "#4285f4",
+    "clicks last 7 days": "transparent",
+    "incomplete clicks": "transparent",
   };
 
   columns.push(chartData.timeseries);
@@ -515,17 +451,20 @@ function drawChart(chartData) {
     line: {
       classes: [],
     },
+    color: {
+      pattern: chartColors().palette,
+    },
     bindto: "#chart",
     padding: {
-      left: 46,
-      right: 60,
+      left: 75,
+      right: 30,
     },
     data: {
       x: "x",
       columns: columns,
       colors: colors,
       order: "desc",
-      type: "line",
+      type: line(),
       axes: {},
       hide: [
         "clicks last 7 days",
@@ -547,7 +486,7 @@ function drawChart(chartData) {
             let ctr = chartData.dataMapCtr.get(ts);
             return ctrFormat(ctr / 100);
           }
-          return parseFloat(value).toLocaleString();
+          return settings.metric === "ctr" ? ctrFormat(value) : numberFormat(value);
         },
         title: function (x) {
           return dateFormat(x);
@@ -556,23 +495,20 @@ function drawChart(chartData) {
     },
     axis: {
       y: {
-        label: settings.metric,
+        label: { text: metricLabel(), position: "outer-middle" },
         padding: {
-          top: 0,
+          top: 10,
           bottom: 0,
         },
         min: 0,
         show: true,
         tick: {
           fit: true,
-          format: function (d) {
-            return d.toLocaleString();
-          },
+          format: (d) => (settings.metric === "ctr" ? ctrFormat(d) : numberFormat(d)),
         },
       },
       y2: {},
       x: {
-        label: "by hour",
         padding: {
           left: 0,
           right: 0,
@@ -588,112 +524,11 @@ function drawChart(chartData) {
   });
 }
 
-async function setClipboard(text, message) {
-  const type = "text/plain";
-  const blob = new Blob([text], { type });
-  const data = [new ClipboardItem({ [type]: blob })];
-  await navigator.clipboard.write(data);
-
-  const $badge = $("#action-badge");
-  $badge.text(message);
-  $badge.removeClass("d-none").addClass("visible");
-  setTimeout(() => {
-    $badge
-      .removeClass("visible")
-      .one("transitionend", () => $badge.addClass("d-none"));
-  }, 1000);
+function tableButtons(name) {
+  return exportButtons(settings, name);
 }
 
-function getNestedProperty(obj, path) {
-  return path.split(".").reduce((acc, part) => acc && acc[part], obj);
-}
-
-// Function to filter selections based on visible columns and use column titles in the output
-function filterVisibleColumns(selections, columns) {
-  // Create a mapping of field paths to titles for visible columns
-  const columnMap = columns
-    .filter((column) => column.visible)
-    .filter((column) => !column.suppressExport)
-    .reduce((map, column) => {
-      map[column.field] = column.title;
-      return map;
-    }, {});
-
-  // Filter each selection to include only data from visible columns
-  const filteredSelections = selections.map((selection) => {
-    const filteredData = {};
-    Object.keys(columnMap).forEach((field) => {
-      const value = getNestedProperty(selection, field);
-      if (value !== undefined) {
-        // Use the title as the key in the output object
-        filteredData[columnMap[field]] = value;
-      }
-    });
-    return filteredData;
-  });
-
-  return filteredSelections;
-}
-
-function getGSheetClipboard(table) {
-  let filteredSelections = filterVisibleColumns(table.data, table.columns);
-  let formatters = [];
-  let output = table.columns
-    .map((col) => {
-      if (col.suppressFormatterExport) {
-        formatters.push(undefined);
-      } else {
-        formatters.push(col.formatter);
-      }
-      if (col.visible) {
-        return col.title;
-      }
-    })
-    .filter((col) => col)
-    .join("\t");
-  output += "\n";
-  output += filteredSelections
-    .map((col) => {
-      return Object.values(col)
-        .map((data, index) => {
-          let formatter = formatters[index];
-          if (!formatter) {
-            return data;
-          }
-          return formatter(data);
-        })
-        .join("\t");
-    })
-    .join("\n");
-  return output;
-}
-
-function tableButtons() {
-  return {
-    btnPaintCharts: {
-      text: "paint chart",
-      icon: "bi-graph-up",
-      event: function () {
-        drawSelections();
-        $pagesTable.bootstrapTable("uncheckAll");
-      },
-      attributes: {
-        title: "draw selected pages on graph",
-      },
-    },
-    btnGSheetClipboard: {
-      text: "sheets clipboard",
-      icon: "bi-file-spreadsheet",
-      event: function () {
-        let text = getGSheetClipboard(this);
-        setClipboard(text, "table copied to clipboard");
-      },
-      attributes: {
-        title: "copy selected rows for google sheets",
-      },
-    },
-  };
-}
+const metricLabel = () => (settings.metric === "ctr" ? "CTR" : settings.metric);
 
 function rowStylePages(row, index) {
   let classes = ["action-link"];
@@ -718,7 +553,7 @@ function rowStyleHours(row, index) {
 let hoursColumns = [
   {
     field: "timestamp",
-    title: "timestamp",
+    title: "hour",
     formatter: dateFormat,
     sortable: true,
     visible: true,
@@ -728,6 +563,8 @@ let hoursColumns = [
   {
     field: "clicks",
     title: "clicks",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -736,6 +573,8 @@ let hoursColumns = [
   {
     field: "impressions",
     title: "impressions",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -762,6 +601,7 @@ let hoursColumns = [
 
 let pagesColumns = [
   {
+    field: "state",
     checkbox: true,
     sortable: false,
     visible: true,
@@ -769,7 +609,7 @@ let pagesColumns = [
   },
   {
     field: "color",
-    title: "color",
+    title: "line",
     sortable: false,
     visible: true,
     searchable: false,
@@ -790,6 +630,8 @@ let pagesColumns = [
   {
     field: "clicks",
     title: "clicks",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -798,6 +640,8 @@ let pagesColumns = [
   {
     field: "impressions",
     title: "impressions",
+    formatter: numberFormat,
+    suppressFormatterExport: true,
     sortable: true,
     visible: true,
     searchable: false,
@@ -824,7 +668,9 @@ let pagesColumns = [
 ];
 
 function colorFormatter(value, row) {
-  return `<input type="color" data-page="${row?.page}" value="#ffffff" class="graphColors form-control form-control-sm">`;
+  if (!value || !/^#[0-9a-f]{6}$/i.test(value)) return "";
+  const page = escapeHtml(row?.page);
+  return `<input type="color" data-page="${page}" value="${value}" class="graphColors form-control form-control-sm d-inline-block" aria-label="Line colour for ${page}" title="Change line colour">`;
 }
 
 let dtf = new Intl.DateTimeFormat("default", {
@@ -841,43 +687,13 @@ function dateFormat(value) {
   return dtf.format(new Date(Number(value)));
 }
 
-function toLocaleString(value) {
-  if (!value) return "";
-  let d = new Date(Number(value));
-  return d.toLocaleString();
-}
-
-function getLocalISOStringSlice(ts) {
-  const now = new Date(ts);
-  const offset = now.getTimezoneOffset(); // in minutes
-  const localTime = new Date(now.getTime() - offset * 60000);
-  return localTime.toISOString().slice(0, 16);
-}
-
-function ctrFormat(value) {
-  const num = Number(value);
-  if (!isFinite(num) || num === 0) return "0.0%";
-  return `${(num * 100).toFixed(1)}%`;
-}
-
-function sanitizeFilename(input) {
-  const illegalRe = /[\\\/:*?"<>|\x00-\x1F]/g;
-  return input.replace(illegalRe, "_");
-}
-
-function generateFilename(name) {
-  return `${sanitizeFilename(settings.siteUrl)}-${sanitizeFilename(settings.type)}-${sanitizeFilename(toLocaleString(settings.from))}-${sanitizeFilename(toLocaleString(settings.to))}-${name}`;
-}
-
 function urlFormatter(value, row) {
-  return `${value}<button
-    data-url="${value}"
-    class="action-icon clipboard-icon btn btn-transparent float-end"
-  ></button>`;
+  return `${escapeHtml(value)}${pageActionButtons(value)}`;
 }
 
 async function generatePagesTable() {
   $pagesTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#pagestable-toolbar",
     uniqueId: "page",
     classes: "table table-hover",
@@ -886,37 +702,33 @@ async function generatePagesTable() {
     pageSize: 100,
     pagination: true,
     showRefresh: false,
-    buttons: tableButtons,
+    buttons: () => tableButtons("pages"),
     search: true,
     columns: pagesColumns,
     rowStyle: rowStylePages,
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("pages");
-      },
-    },
     sortOrder: "asc",
     sortName: "timestamp",
-    onCheck: function (row, $element) {
-      chart.focus(row.page);
-    },
-    onUncheck: function (row, $element) {
-      chart.revert();
-      $pagesTable.bootstrapTable("getSelections").forEach((row) => {
-        chart.focus(row.page);
-      });
-    },
-    onCheckAll: function (rowsAfter, rowsBefore) {
-      //console.log(rowsAfter);
-    },
   });
+  $pagesTable.on(
+    "check.bs.table uncheck.bs.table check-all.bs.table uncheck-all.bs.table check-some.bs.table uncheck-some.bs.table post-body.bs.table",
+    updateDrawButton,
+  );
+}
+
+// Property-level columns; drawing pages swaps in one column per page.
+const propertyHoursColumns = hoursColumns;
+
+function resetHoursTableColumns() {
+  if (hoursColumns === propertyHoursColumns) return;
+  hoursColumns = propertyHoursColumns;
+  $hoursTable.bootstrapTable("destroy");
+  generateHoursTable();
 }
 
 async function generateHoursTable() {
   $hoursTable.bootstrapTable({
+    buttonsClass: "outline-secondary",
     toolbar: "#hourstable-toolbar",
     uniqueId: "timestamp",
     classes: "table table-hover",
@@ -924,16 +736,9 @@ async function generateHoursTable() {
     data: [],
     pageSize: 1000,
     showRefresh: false,
-    buttons: tableButtons,
+    buttons: () => tableButtons("timeline"),
     columns: hoursColumns,
     showColumns: true,
-    exportTypes: ["csv"],
-    showExport: true,
-    exportOptions: {
-      fileName: function () {
-        return generateFilename("timeline");
-      },
-    },
     sortOrder: "asc",
     sortName: "timestamp",
   });
@@ -943,7 +748,7 @@ async function generateNewHoursTableColumns() {
   hoursColumns = [
     {
       field: "timestamp",
-      title: "timestamp",
+      title: "hour",
       formatter: dateFormat,
       sortable: true,
       visible: true,
@@ -959,7 +764,9 @@ async function generateNewHoursTableColumns() {
       sortable: false,
       visible: true,
       searchable: false,
-      align: "left",
+      align: "right",
+      formatter: (v) => (v == null ? "–" : settings.metric === "ctr" ? ctrFormat(v) : numberFormat(v)),
+      suppressFormatterExport: true,
     });
   });
 }
@@ -1036,118 +843,128 @@ function pivotByTimestamp(data, metric, opts = {}) {
   return out;
 }
 
-function addFilter(name, value) {
-  let u = new URL(document.location.href);
-  if (u.searchParams.has(name)) {
-    u.searchParams.set(name, value);
-  } else {
-    u.searchParams.append(name, value);
-  }
-  history.pushState(null, null, u.search);
-  currentURL = new URL(document.location);
-}
-function removeFilter(name) {
-  let u = new URL(document.location.href);
-  u.searchParams.delete(name);
-  if (u.search) {
-    history.pushState(null, null, u.search);
-  } else {
-    history.pushState(
-      null,
-      null,
-      document.location.origin + document.location.pathname,
-    );
-  }
-  currentURL = new URL(document.location);
+const floorHour = (ts) => {
+  const d = new Date(ts);
+  d.setMinutes(0, 0, 0);
+  return d.getTime();
+};
+const startOfDay = (daysAgo) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+/** Default timeframe: the whole hourly window (Google keeps about 10 days). */
+function wholeWindow() {
+  return { from: startOfDay(10), to: floorHour(Date.now()) };
 }
 
-function getYesterday10() {
-  let d = new Date();
-  d.setDate(d.getDate() - 10);
-  let from = d.setHours(0, 0, 0, 0);
-  let to = d.setDate(d.getDate() + 1);
-  to = to - 1000 * 60 * 60 * 1;
-
-  return { from, to };
+function hourPresets() {
+  const now = () => floorHour(Date.now());
+  return [
+    { label: "All available hours", range: wholeWindow },
+    { label: "Today", range: () => ({ from: startOfDay(0), to: now() }) },
+    { label: "Yesterday", range: () => ({ from: startOfDay(1), to: startOfDay(0) - MS_PER_HOUR }) },
+    { label: "Last 24 hours", range: () => ({ from: now() - 24 * MS_PER_HOUR, to: now() }) },
+    { label: "Last 3 days", range: () => ({ from: startOfDay(2), to: now() }) },
+  ];
 }
 
-async function checkAuth() {
-  if (document.visibilityState !== "visible") {
-    return;
-  }
-  chrome.identity.getAuthToken({ interactive: false }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      $("#auth_dropdown")
-        .removeClass("btn-outline-primary")
-        .removeClass("btn-outline-success")
-        .addClass("btn-outline-danger");
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
+/** Shaded band when the pages timeframe is narrower than the chart. */
+function drawTimeframe() {
+  if (!chart) return;
+  chart.regions.remove();
+  const first = settings.timeseries[1];
+  const last = settings.timeseries[settings.timeseries.length - 1];
+  if (!(settings.from < settings.to)) return;
+  if (settings.from <= first && settings.to >= last) return;
+  chart.regions.add({
+    axis: "x",
+    start: settings.from,
+    end: settings.to + MS_PER_HOUR,
+    class: "regionCut",
+    label: { text: "Pages tab timeframe", x: 5, y: 4 },
   });
 }
 
-let dimensionsFilterOperators = {
-  "*": "contains",
-  "-": "notContains",
-  "=": "equals",
-  "!": "notEquals",
-  "~": "includingRegex",
-  _: "excludingRegex",
-};
-function assemblePageFilters() {
-  if (!settings.page) {
-    return [];
+/** Sets the pages timeframe (ms timestamps, hour starts) and re-aggregates pages. */
+function applyRange({ from, to }) {
+  from = floorHour(from);
+  to = floorHour(to);
+  settings.from = from;
+  settings.to = to;
+  $("#from").val(getLocalISOStringSlice(from));
+  $("#to").val(getLocalISOStringSlice(to));
+  addFilters({ from: getLocalISOStringSlice(from), to: getLocalISOStringSlice(to) });
+  const valid = from < to;
+  $("#from, #to").toggleClass("is-invalid", !valid);
+  drawTimeframe();
+  if (!valid) {
+    showNotice("“From” must be before “to”", 3000);
+    return;
   }
-  if (settings.page.length < 2) {
-    return [];
-  }
-  let operator = dimensionsFilterOperators[settings.page[0]];
-  let dimension = "page";
-  let expression = settings.page.slice(1);
+  getPages();
+}
 
-  return [{ dimension, operator, expression }];
+function loadAll() {
+  listSites();
+  getTimeline();
+  getPages();
+}
+
+/** Reloads chart and both tables for the current settings. */
+function reloadAll() {
+  clearChart();
+  if (!settings.auth.token) return;
+  $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
+  getTimeline();
+  getPages();
+}
+
+/** Applies a URL filter (settings.page format, or null to remove) and reloads. */
+function setPageFilter(page) {
+  settings.page = page || null;
+  if (settings.page) addFilter("page", settings.page);
+  else removeFilter("page");
+  syncPageFilterUi(settings.page);
+  pageFilterModal.hide();
+  reloadAll();
+}
+
+/** Back/forward: take the whole state from the URL again. */
+function syncFromUrl(params) {
+  readSharedUrlState(settings, params);
+  const full = wholeWindow();
+  settings.from = parseTimestamp(params.get("from")) ?? full.from;
+  settings.to = parseTimestamp(params.get("to")) ?? full.to;
+  settings.metric = params.get("metric") || "clicks";
+  $("#from").val(getLocalISOStringSlice(settings.from));
+  $("#to").val(getLocalISOStringSlice(settings.to));
+  $("#from, #to").removeClass("is-invalid");
+  $("#metric").val(settings.metric);
+  reloadAll();
+}
+
+function clearAll() {
+  clearChart();
+  $pagesTable.bootstrapTable("removeAll");
+  $hoursTable.bootstrapTable("removeAll");
 }
 
 async function init() {
-  chrome.identity.getAuthToken({ interactive: false }, (token) => {
-    if (chrome.runtime.lastError || !token) {
-      $("#auth_dropdown")
-        .removeClass("btn-outline-primary")
-        .removeClass("btn-outline-success")
-        .addClass("btn-outline-danger");
-      return;
-    }
-    $("#auth_dropdown")
-      .removeClass("btn-outline-primary")
-      .removeClass("btn-outline-danger")
-      .addClass("btn-outline-success");
-    settings.auth.token = token;
+  initAuth(settings, { onSignIn: loadAll, onSignOut: clearAll });
 
-    listSites();
-    if (settings.siteUrl) {
-      getTimeline();
-      getPages();
-    }
-  });
-  document.addEventListener("visibilitychange", checkAuth);
-
-  $("#property").attr("placeholder", settings.siteUrl);
+  showProperty(settings.siteUrl);
   $("#type").val(settings.type);
-  if (settings.siteUrl) {
-    $("#propertyBtn").text(settings.siteUrl);
-  }
 
-  let yesterday = getYesterday10();
+  const full = wholeWindow();
   if (!settings.from) {
-    settings.from = yesterday.from;
+    settings.from = full.from;
   }
   if (!settings.to) {
-    settings.to = yesterday.to;
+    settings.to = full.to;
   }
   $("#from").val(getLocalISOStringSlice(settings.from));
   $("#to").val(getLocalISOStringSlice(settings.to));
@@ -1155,26 +972,7 @@ async function init() {
   generateHoursTable();
   generatePagesTable();
 
-  $(".nav-tabs").on("click", ".nav-item", function (e) {
-    e.preventDefault(); // Prevent the default link behavior
-
-    let id = $(this).data("id");
-    $tabs.removeClass("visible").addClass("invisible d-none");
-    $(`#${id}Tab`).removeClass("invisible d-none").addClass("visible");
-
-    // Remove 'active' from all nav links in the same nav-tabs container
-    $(this)
-      .closest(".nav-tabs")
-      .find(".nav-link")
-      .removeClass("active text-primary")
-      .addClass("text-secondary");
-
-    // Add 'active' to the clicked nav-item's nav-link
-    $(this)
-      .find(".nav-link")
-      .removeClass("text-secondary")
-      .addClass("active text-primary");
-  });
+  initTabs();
 
   $("#type").on("change", function () {
     let type = $(this).val();
@@ -1196,22 +994,15 @@ async function init() {
       return;
     }
     if (!settings.properties.includes(selectedValue)) {
-      //console.warn("No valid property selected");
-      $("#property").addClass("is-invalid");
-      $("#propertyBtn").addClass("btn-outline-danger");
-      $("#propertyBtn").removeClass("btn-outline-secondary");
+      showProperty(null, false);
       return;
     }
-    $("#property").removeClass("is-invalid");
-    $("#propertyBtn").removeClass("btn-outline-danger");
-    $("#propertyBtn").addClass("btn-outline-secondary");
     clearChart();
     $pagesTable.bootstrapTable("removeAll");
     $hoursTable.bootstrapTable("removeAll");
     settings.siteUrl = selectedValue;
-    $("#property").attr("placeholder", settings.siteUrl);
-    $("#property").val("");
-    $("#propertyBtn").text(settings.siteUrl);
+    showProperty(settings.siteUrl);
+    $("#property").val("").trigger("blur");
     addFilter("property", selectedValue);
     getTimeline();
     getPages();
@@ -1223,115 +1014,55 @@ async function init() {
       dataset: { page },
     } = this;
     chart.data.colors({ [page]: color });
+    const row = $pagesTable.bootstrapTable("getRowByUniqueId", page);
+    if (row) row.color = color;
   });
+
+  $("#drawPages").on("click", drawSelections);
 
   $("input[type='datetime-local']").on("change", function () {
     let val = $(this).val();
     let id = $(this).attr("id");
     if (!val) return;
-
-    const date = new Date(val);
-    date.setMinutes(0);
-    date.setSeconds(0);
-    date.setMilliseconds(0);
-
-    // Format back to datetime-local string
-    const pad = (n) => String(n).padStart(2, "0");
-    const formatted = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:00`;
-
-    $(this).val(formatted);
-    settings[id] = date.getTime();
-    addFilter(id, formatted);
-
-    if (chart) {
-      chart.regions.remove();
-    }
-
-    $pagesTable.bootstrapTable("removeAll");
-    if (chart && settings.from < settings.to) {
-      chart.regions.add({
-        axis: "x",
-        start: settings.from,
-        end: settings.to,
-        class: "regionCut",
-        label: {
-          text: "pages",
-          x: 5,
-        },
-      });
-      getPages();
-    }
+    applyRange({ ...settings, [id]: new Date(val).getTime() });
   });
+  initRangePresets(hourPresets(), applyRange);
 
-  if (settings.page) {
-    $("#urlFilterMode").val(settings.page?.[0]);
-    $("#floatingPageFilterInput").val(settings.page.slice(1));
+  syncPageFilterUi(settings.page);
 
-    $("#pageFilter")
-      .removeClass("btn-outline-secondary")
-      .addClass("btn-primary");
-  }
-
-  $("#applyPageFilter").on("click", function () {
-    let type = $("#urlFilterMode").val();
-    let page = $("#floatingPageFilterInput").val();
-
-    if (!page) {
-      settings.page = null;
-      removeFilter("page");
-      $("#pageFilter")
-        .addClass("btn-outline-secondary")
-        .removeClass("btn-primary");
-    } else {
-      settings.page = `${type}${page}`;
-      addFilter("page", settings.page);
-      $("#pageFilter")
-        .removeClass("btn-outline-secondary")
-        .addClass("btn-primary");
-    }
-
-    pageFilterModal.hide();
-
-    clearChart();
-    $pagesTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-    $hoursTable.bootstrapTable("removeAll").bootstrapTable("showLoading");
-
-    getTimeline();
-    getPages();
+  initPageFilterModal(function () {
+    const value = $("#floatingPageFilterInput").val();
+    setPageFilter(value ? `${$("#urlFilterMode").val()}${value}` : null);
   });
+  initPageFilterActions((url) => setPageFilter(pageFilterFor(url)));
+  initHistory(syncFromUrl);
 
   $("#metric").val(settings.metric);
   $("#metric").on("change", function () {
-    clearChart();
     const value = this.value;
     settings.metric = value;
     addFilter("metric", value);
+    if (!chart) return;
     chart.axis.labels({
-      y: settings.metric,
+      y: metricLabel(),
     });
+    chart.flush();
+    if (settings.selectedPages.length) {
+      chart.load({
+        columns: settings.selectedPages.map((page) =>
+          generatePageLine(page, settings.metric),
+        ),
+      });
+      colorTable();
+      generateNewHoursTable();
+    }
   });
 
-  $propertyBtn.on("click", function () {
-    $propertyBtn.removeClass("d-block").addClass("d-none");
-    $propertyInput.removeClass("d-none").addClass("d-block").focus();
-  });
+  initPropertyPicker();
 
-  // input blur → hide input, show button
-  $propertyInput.on("blur", function () {
-    $propertyInput.removeClass("d-block").addClass("d-none");
-    $propertyBtn.removeClass("d-none").addClass("d-block");
-  });
+  initClipboardIcons();
+  initViewSwitcher();
+  initKeyboardShortcuts();
 
-  $(document).on("click", ".clipboard-icon", function () {
-    let text = $(this).data("url");
-    setClipboard(text, "page copied to clipboard");
-  });
-
-  const popoverTriggerList = document.querySelectorAll(
-    '[data-bs-toggle="popover"]',
-  );
-  const popoverList = [...popoverTriggerList].map(
-    (popoverTriggerEl) => new bootstrap.Popover(popoverTriggerEl),
-  );
 }
 init();

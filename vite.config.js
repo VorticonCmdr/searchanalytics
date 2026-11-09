@@ -1,7 +1,38 @@
 import { defineConfig } from 'vite';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
-import inject from '@rollup/plugin-inject';
-import { resolve } from 'path';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+const projectRoot = import.meta.dirname;
+const fromRoot = (path) => resolve(projectRoot, path);
+
+// Files the extension needs verbatim (not bundled), as [source, path inside dist/].
+// Emitted through Rollup, so they can only ever land inside build.outDir.
+const extensionFiles = [
+  ['manifest.json', 'manifest.json'],
+  ['icons/logo-128.png', 'icons/logo-128.png'],
+  ['icons/logo-180.png', 'icons/logo-180.png'],
+  ['icons/logo-192.png', 'icons/logo-192.png'],
+  // Service worker: copied verbatim, not bundled (MV3 constraint)
+  ['src/js/background.js', 'js/background.js'],
+  // Theme switcher: classic <head> script so the colour scheme applies before first paint
+  ['src/js/theme.js', 'js/theme.js'],
+  // Billboard CSS: two separate files for media-query dark mode
+  ['node_modules/billboard.js/dist/billboard.min.css', 'css/billboard.min.css'],
+  ['node_modules/billboard.js/dist/theme/dark.min.css', 'css/billboard.dark.min.css'],
+];
+
+function copyExtensionFiles(files) {
+  return {
+    name: 'copy-extension-files',
+    apply: 'build',
+    async generateBundle() {
+      for (const [src, fileName] of files) {
+        this.addWatchFile(fromRoot(src));
+        this.emitFile({ type: 'asset', fileName, source: await readFile(fromRoot(src)) });
+      }
+    },
+  };
+}
 
 export default defineConfig({
   root: 'src',
@@ -11,36 +42,12 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        index:   resolve(__dirname, 'src/html/index.html'),
-        days:    resolve(__dirname, 'src/html/days.html'),
-        hourly:  resolve(__dirname, 'src/html/hourly.html'),
-        options: resolve(__dirname, 'src/html/options.html'),
+        index:   fromRoot('src/html/index.html'),
+        days:    fromRoot('src/html/days.html'),
+        hourly:  fromRoot('src/html/hourly.html'),
+        options: fromRoot('src/html/options.html'),
       },
     },
   },
-  plugins: [
-    // Provide jQuery and bb as globals for UMD plugins (bootstrap-table, tableexport)
-    // Restricted to JS/MJS files only — CSS files must not be parsed by this plugin
-    {
-      ...inject({
-        $:      ['jquery', 'default'],
-        jQuery: ['jquery', 'default'],
-        bb:     ['billboard.js', 'default'],
-        include: ['**/*.js', '**/*.mjs', '**/*.ts'],
-      }),
-      enforce: 'pre',
-    },
-    viteStaticCopy({
-      // Paths are relative to the Vite root (src/), so use ../ to reach project root
-      targets: [
-        { src: '../manifest.json',                                                    dest: '.' },
-        { src: '../icons',                                                            dest: '.' },
-        // Service worker: copied verbatim, not bundled (MV3 constraint)
-        { src: './js/background.js',                                                  dest: 'js/' },
-        // Billboard CSS: two separate files for media-query dark mode
-        { src: '../node_modules/billboard.js/dist/billboard.min.css',                dest: 'css/' },
-        { src: '../node_modules/billboard.js/dist/theme/dark.min.css', rename: 'billboard.dark.min.css', dest: 'css/' },
-      ],
-    }),
-  ],
+  plugins: [copyExtensionFiles(extensionFiles)],
 });

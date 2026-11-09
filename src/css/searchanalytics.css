@@ -1,105 +1,268 @@
-@import url("https://fonts.googleapis.com/css?family=Google+Sans");
+/* Theme tokens. data-bs-theme is set from prefers-color-scheme by /js/theme.js.
+   Chart colours are read from these at draw time (see chartColors() in common.js). */
 :root {
-    --bs-font-sans-serif:
-        "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto,
-        "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif,
-        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
-        "Noto Color Emoji";
+    --sa-page-bg: #eef1f7;
+    --sa-clicks: #4285f4;
+    --sa-impressions: #5e35b1;
+    --sa-ctr: #00897b;
+    /* categorical palette for per-page lines (pages by hour) */
+    --sa-series-palette: #4285f4, #e8710a, #1e8e3e, #d93025, #9334e6, #12b5cb,
+        #f538a0, #7c6f00;
+    --sa-event-highlight: #e20074;
+    --sa-event-muted: #aaaaaa;
 }
+[data-bs-theme="dark"] {
+    --sa-page-bg: #121417;
+    --sa-clicks: #8ab4f8;
+    --sa-impressions: #b39ddb;
+    --sa-ctr: #4db6ac;
+    --sa-series-palette: #8ab4f8, #fcad70, #81c995, #f28b82, #c58af9, #78d9ec,
+        #ff8bcb, #e2c94b;
+    --sa-event-muted: #6c757d;
+}
+
 body {
-    font-family: Roboto, RobotoDraft, Helvetica, Arial, sans-serif;
-    background-color: #ebeff7;
+    background-color: var(--sa-page-bg);
 }
-#type {
+
+/* ── navbar ─────────────────────────────────────────────────────────────── */
+.sa-navbar {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+}
+.sa-view-switch {
+    --bs-btn-padding-x: 0.25rem;
+    font-size: 1.05rem;
+}
+#type,
+#groupBy,
+#metric,
+#property {
     width: fit-content;
 }
-#groupBy {
-    width: fit-content;
-}
-.line-class-clicks-last-7-days {
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-dasharray: 4 4;
-    stroke-width: 3;
-}
-.line-class-impressions-last-7-days {
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-dasharray: 4 4;
-    stroke-width: 3;
-}
-.line-class-ctr-last-7-days {
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-dasharray: 4 4;
-    stroke-width: 3;
-}
-.line-class-incomplete-clicks {
-    stroke-dasharray: 2 4;
-    stroke-width: 2;
-}
-.line-class-incomplete-impressions {
-    stroke-dasharray: 2 4;
-    stroke-width: 2;
-}
-.line-class-incomplete-ctr {
-    stroke-dasharray: 2 4;
-    stroke-width: 2;
-}
-.bb-tooltip .value {
-    float: right;
-}
-.incomplete td {
-    color: #696969;
+#property {
+    min-width: 18rem;
 }
 .textnowrap {
     text-wrap-mode: nowrap;
 }
-#property {
-    width: fit-content;
+#pageFilterLabel {
+    display: inline-block;
+    max-width: 24ch;
+    vertical-align: bottom;
+}
+#auth_dropdown .bi {
+    margin-right: 0.25rem;
+}
+
+/* ── cards & tabs ───────────────────────────────────────────────────────── */
+.sa-card {
+    --bs-card-border-color: var(--bs-border-color-translucent);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.sa-card > .card-header {
+    background-color: transparent;
+}
+.nav-tabs {
+    --bs-nav-link-color: var(--bs-secondary-color);
+    --bs-nav-link-hover-color: var(--bs-body-color);
+    --bs-nav-tabs-link-active-color: var(--bs-primary);
+}
+.nav-tabs .nav-link.active {
+    font-weight: 600;
+}
+
+/* ── chart ──────────────────────────────────────────────────────────────── */
+#chart-and-filter {
+    position: relative;
+}
+.sa-chart-key {
+    margin: 0.25rem 0 0;
+    font-size: 0.8125rem;
+    color: var(--bs-secondary-color);
+    text-align: center;
+}
+/* The key only makes sense while a chart is visible. */
+#chart-and-filter:has(#chart-state:not(.d-none)) + .sa-chart-key {
+    visibility: hidden;
+}
+.sa-key-line {
+    display: inline-block;
+    width: 1.75rem;
+    height: 0;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+    border-top: 2px solid currentColor;
+}
+.sa-key-line.dashed {
+    border-top-style: dashed;
+    opacity: 0.6;
+}
+.sa-key-line.dotted {
+    border-top-style: dotted;
+}
+.sa-key-band {
+    display: inline-block;
+    width: 1rem;
+    height: 0.75rem;
+    margin-right: 0.35rem;
+    vertical-align: middle;
+    background: var(--bs-secondary-bg);
+    border: 1px solid var(--bs-border-color);
+}
+/* Line hierarchy (classes set via data.classes): the current week is the hero,
+   the previous week is context, incomplete hours are provisional. */
+.bb-target-current .bb-line {
+    stroke-width: 2px;
+}
+.bb-target-previous .bb-line {
+    stroke-width: 1.5px;
+    stroke-dasharray: 5 4;
+    opacity: 0.55;
+}
+.bb-target-incomplete .bb-line {
+    stroke-width: 2px;
+    stroke-dasharray: 1 4;
+    stroke-linecap: round;
+}
+.bb-tooltip .value {
+    float: right;
+}
+.bb-tooltip {
+    font-variant-numeric: tabular-nums;
+}
+/* Billboard's dark theme fills regions at 50% — too heavy for event bands. */
+[data-bs-theme="dark"] .bb-region rect {
+    fill-opacity: 0.2;
+}
+
+/* Overlay for loading / empty states, centred over the chart. */
+.sa-chart-state {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    text-align: center;
+    color: var(--bs-secondary-color);
+    background: color-mix(in srgb, var(--bs-body-bg) 82%, transparent);
+}
+.sa-chart-state .bi {
+    font-size: 2rem;
+    line-height: 1;
+}
+.sa-chart-state p {
+    max-width: 36rem;
+    margin: 0;
+    font-size: 1.05rem;
+    color: var(--bs-body-color);
+}
+
+/* ── tables ─────────────────────────────────────────────────────────────── */
+.bootstrap-table .table {
+    --bs-table-bg: transparent;
+    margin-bottom: 0;
+}
+.bootstrap-table .table > :not(caption) > * > * {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+}
+.bootstrap-table .table td,
+.bootstrap-table .table th {
+    font-variant-numeric: tabular-nums;
+}
+.bootstrap-table .table thead th {
+    font-weight: 600;
+    color: var(--bs-secondary-color);
+    border-bottom-width: 1px;
+}
+.bootstrap-table .fixed-table-container {
+    border: 0;
+}
+.incomplete td {
+    color: var(--bs-secondary-color);
+    font-style: italic;
 }
 .fixed-table-toolbar {
-    padding-left: 1rem;
-    padding-right: 0.5rem;
+    padding: 0.5rem 0.75rem 0;
 }
+.fixed-table-pagination {
+    padding: 0 0.75rem;
+}
+.sa-range {
+    width: auto;
+    flex-wrap: nowrap;
+}
+.sa-range > .form-control {
+    flex: 0 0 auto;
+    width: auto;
+}
+.no-records-found td {
+    padding: 2rem 0.5rem !important;
+    color: var(--bs-secondary-color);
+}
+
+/* Row action icons: revealed on row hover and on keyboard focus. */
 .action-icon {
-    font-family: "bootstrap-icons"; /* required */
-    font-size: 1em; /* match link text size */
-    line-height: 1; /* tighten box */
-    vertical-align: -0.125em; /* nudge down to baseline */
+    font-family: "bootstrap-icons";
+    font-size: 1em;
+    line-height: 1;
+    vertical-align: -0.125em;
     margin-left: 0.25rem;
-    opacity: 0; /* hidden by default */
+    opacity: 0;
     transition: opacity 0.2s ease;
 }
-.action-link:hover .action-icon {
+.action-link:hover .action-icon,
+.action-link:focus-within .action-icon,
+.action-icon:focus-visible {
     opacity: 1;
 }
 .clipboard-icon::before {
     content: "\f759"; /* copy */
 }
 .btn-transparent {
-    --bs-btn-color: #000;
-    /* --bs-btn-bg: #f8f9fa; */
-    /* --bs-btn-border-color: #f8f9fa; */
-    --bs-btn-hover-color: #000;
-    --bs-btn-hover-bg: #d3d4d5;
-    --bs-btn-hover-border-color: #c6c7c8;
-    --bs-btn-focus-shadow-rgb: 211, 212, 213;
-    --bs-btn-active-color: #000;
-    --bs-btn-active-bg: #c6c7c8;
-    --bs-btn-active-border-color: #babbbc;
-    --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
-    --bs-btn-disabled-color: #000;
-    --bs-btn-disabled-bg: #f8f9fa;
-    --bs-btn-disabled-border-color: #f8f9fa;
+    --bs-btn-color: var(--bs-body-color);
+    --bs-btn-hover-color: var(--bs-body-color);
+    --bs-btn-hover-bg: var(--bs-secondary-bg);
+    --bs-btn-hover-border-color: var(--bs-border-color);
+    --bs-btn-focus-shadow-rgb: var(--bs-secondary-rgb);
+    --bs-btn-active-color: var(--bs-body-color);
+    --bs-btn-active-bg: var(--bs-tertiary-bg);
+    --bs-btn-active-border-color: var(--bs-border-color);
+    --bs-btn-disabled-color: var(--bs-secondary-color);
+}
+/* Per-page line colour swatch (pages by hour). */
+.graphColors {
+    width: 2.25rem;
+    height: 1.5rem;
+    padding: 0.1rem;
 }
 
+/* ── notices ────────────────────────────────────────────────────────────── */
+#notices:empty {
+    display: none;
+}
 #action-badge {
+    position: fixed !important;
+    left: 50%;
+    bottom: 1.5rem;
+    z-index: 1090;
+    transform: translateX(-50%);
+    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
     opacity: 0;
     transition: opacity 0.3s ease;
-    pointer-events: none; /* optional */
+    pointer-events: none;
+    white-space: normal;
+    max-width: min(90vw, 40rem);
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.2);
 }
-
 #action-badge.visible {
     opacity: 1;
 }

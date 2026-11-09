@@ -2,7 +2,7 @@
 
 A Chrome extension that provides an alternative UI for the [Google Search Console](https://search.google.com/search-console) Search Analytics API. It focuses on high-granularity, hourly data and offers views that the native GSC interface does not provide.
 
-**Chrome Web Store:** https://chrome.google.com/webstore/detail/search-analytics-extensio/amobaldhodbblgmphdddddippgjgphga
+**Chrome Web Store:** https://chromewebstore.google.com/detail/search-analytics-alternat/amobaldhodbblgmphdddddippgjgphga
 
 ---
 
@@ -13,11 +13,17 @@ A Chrome extension that provides an alternative UI for the [Google Search Consol
 - Interactive Billboard.js line chart with week-over-week comparison and incomplete-data highlighting
 - URL/page filtering with six operator modes including regex
 - Page aggregation by configurable ID regex (useful for parameterized or ID-based URLs)
-- "First impression" timestamp lookup per page across the full year
-- One-click Google Sheets clipboard export (tab-separated, respects visible columns)
-- CSV export for all tables
-- Dark mode support (auto-detected via `prefers-color-scheme`)
-- All state (property, date range, filter, search type) persisted in URL params — shareable and bookmarkable
+- "First impression" timestamp lookup per page within the hourly data window (Google keeps ~10 days of hourly data)
+- One-click Google Sheets clipboard export (tab-separated, respects visible columns and the current search)
+- CSV download for every table (UTF-8 with BOM, so Excel opens it correctly)
+- Chart annotations ("events") for deploys, issues and Google updates — add them by hand or import them from the [Google Search Status Dashboard](https://status.search.google.com) on the options page
+- Dark mode that follows the operating system (`prefers-color-scheme`)
+- Keyboard accessible: view switcher, tabs (arrow keys), filter dialog (Enter applies), row actions, and `/` to jump to the visible table's search box
+- Guided empty states: the chart area tells you the next step (sign in, choose a property, no data, pick pages to draw)
+- Quick ranges (today, yesterday, last 7 days, last 28 days, …) next to every date picker
+- Switching views keeps the property, search type and URL filter
+- All state (property, date range, filter, search type) persisted in URL params — shareable and bookmarkable; the browser's Back/Forward buttons step through it
+- Every pages table has hover actions on each URL: filter the whole view by that page, or copy the URL
 - No server-side component; all data flows directly from Google's API to the extension
 
 ---
@@ -26,29 +32,33 @@ A Chrome extension that provides an alternative UI for the [Google Search Consol
 
 ### Property by Hour (`index.html`)
 
-The main view. Loads all hourly data for the selected GSC property and year.
+The main view. Loads the hourly data for the selected GSC property. Google only keeps about the last 10 days of hourly data, so that is the window this view (and pages by hour) can show.
 
-- **Chart:** Dual-axis Billboard.js line chart showing clicks (left y-axis) and impressions/CTR (right y-axis). Displays the last 7 days vs. the preceding 7-day period. Incomplete hours (data not yet finalized by Google) are rendered as a separate series in a lighter style.
+- **Chart:** Dual-axis Billboard.js line chart showing clicks (left y-axis) and impressions/CTR (right y-axis). The last 7 days are drawn solid, the preceding 7 days dashed on the same x positions, and incomplete hours (not yet finalized by Google) dotted. Clicking a legend entry toggles a metric (with its incomplete hours). CTR shares the right axis scaled to fit; when it is the only series there, the axis shows real CTR percentages. The shaded band marks the Pages tab's timeframe.
 - **Hours tab:** Full hourly timeline table. Rows for hours with incomplete data are visually flagged.
-- **Pages tab:** Aggregated page performance for the selected time window (`from`/`to` datetime pickers). Pages are optionally aggregated by a configurable ID regex (see Options). Includes a "first impression" column showing when each page/ID first appeared in Google's index within the current year.
+- **Pages tab:** Aggregated page performance for the selected time window (`from`/`to` datetime pickers or a quick range). The funnel icon on a row filters the whole view by that page (by its ID fragment when rows are aggregated by ID, otherwise by the exact URL). Pages are optionally aggregated by a configurable ID regex (see Options). Includes an optional "first impression" column (enable it via the columns menu) showing the first hour each page/ID received impressions within the hourly data window.
 
 ### Property by Day (`days.html`)
 
-Same structure as the main view but at day or month granularity. Useful for longer-range trend analysis. Supports an additional `groupBy` toggle (day / month) and a `dataState` toggle (ALL / FINAL).
+Same structure as the main view but at day or month granularity. Useful for longer-range trend analysis. Supports an additional `groupBy` toggle (day / month) and a `dataState` URL parameter (ALL / FINAL). The timeframe above the chart applies to the chart and both tables. The **Events** tab adds annotations (from, optional to, title, category, all properties or this one); tick events to highlight them on the chart.
 
 ### Pages by Hour (`hourly.html`)
 
-Per-URL hourly time series. Select one or more pages from the table and the chart plots their individual hourly click/impression curves side by side. Metric (clicks / impressions) is switchable.
+Per-URL hourly time series. Tick one or more pages in the table and choose **Draw**: the chart then shows exactly the ticked pages (unticking and drawing again removes lines), each with a colour swatch you can change. Metric (clicks / impressions / CTR) is switchable. The table's timeframe (default: all available hours) controls which hours the page totals cover; "first hour" is always the first hour with data in the whole hourly window.
 
 ---
 
 ## Installation (development / unpacked)
 
-1. Clone or download this repository.
-2. Open `chrome://extensions/` in Chrome.
-3. Enable **Developer mode** (toggle in the top right).
-4. Click **Load unpacked** and select the repository root directory.
+1. Clone this repository and run `npm install` (Node.js 22.12 or newer).
+2. Run `npm run build` (or `npm run dev` for a rebuild-on-change watcher). Output goes to `dist/`.
+3. Open `chrome://extensions/` in Chrome and enable **Developer mode** (toggle in the top right).
+4. Click **Load unpacked** and select the **`dist/`** directory.
 5. The extension icon appears in the toolbar. Click it to open the main view.
+
+To click through the views without loading the extension or signing in, run `npm run harness`: it serves `dist/` on localhost with fake Chrome APIs and fake Search Console data (see [`dev/harness/README.md`](dev/harness/README.md)).
+
+The `manifest.json` includes a `key`, so the unpacked build gets the same extension ID as the store version and the OAuth client keeps working.
 
 ---
 
@@ -57,16 +67,18 @@ Per-URL hourly time series. Select one or more pages from the table and the char
 The extension uses OAuth 2.0 via `chrome.identity` with the `webmasters.readonly` scope. No credentials are stored outside Chrome's identity layer.
 
 - **Silent auth** is attempted automatically on page load (`interactive: false`).
-- If silent auth fails, the auth button turns red. Click **authenticate → refresh auth** to trigger the interactive OAuth flow.
+- If silent auth fails, the auth button turns red and reads **Sign in**, and the chart area offers a **Sign in** button that starts the interactive OAuth flow (also available as **Sign in with Google** in the button's menu).
 - **Sign out** clears all cached tokens via `chrome.identity.clearAllCachedAuthTokens`.
 
 Auth button color codes:
 
 | Color | Meaning |
 |-------|---------|
-| Blue (outline) | Auth state unknown |
-| Green (outline) | Authenticated |
-| Red (outline) | Auth failed or signed out |
+| Grey (outline), "Checking sign-in…" | Auth state not checked yet |
+| Green (outline), "Signed in" | Authenticated |
+| Red (outline), "Sign in" | Auth failed, expired or signed out |
+
+API errors (including an expired session) are shown in a red banner under the navigation bar that stays until dismissed or the next successful load; an expired session offers **Sign in again**. Short confirmations (copied, event added) appear as a toast at the bottom.
 
 ---
 
@@ -113,27 +125,29 @@ The setting is stored in `chrome.storage.sync` and persists across devices.
 
 ## Packaging for the Chrome Web Store
 
+Bump `version` in `manifest.json` and push to `master`. The GitHub Action in `.github/workflows/release.yml` builds `dist/`, zips it and attaches `searchanalytics-v<version>.zip` to a GitHub release. Upload that ZIP in the Chrome Web Store developer console.
+
+To build the ZIP locally instead:
+
 ```bash
-zip -r searchanalytics.v1.5.0.zip ./searchanalytics/ \
-  -x "*/.git/*" \
-  -x "*/.DS_Store" \
-  -x "*/.gitignore" \
-  -x "*.md"
+npm run build && (cd dist && zip -r "../searchanalytics-v$(node -p "require('../manifest.json').version").zip" . -x "*.DS_Store")
 ```
 
 ---
 
 ## Architecture
 
-No build system — all JS/CSS/HTML is served directly by Chrome as unpacked extension files. All vendor libraries are vendored locally under `js/` and `css/`.
+Sources live in `src/` and are bundled with [Vite](https://vitejs.dev/) (`vite.config.js`) into `dist/`, which is what Chrome loads. Dependencies come from npm. At runtime the extension only talks to the Search Console API and, when you click **Fetch events** on the options page, the public Google Search Status feed.
 
 | File | Role |
 |------|------|
-| `html/index.html` + `js/gsc-hourly.js` | Property by hour (main view) |
-| `html/days.html` + `js/gsc-daily.js` | Property by day |
-| `html/hourly.html` + `js/gsc-hourly2.js` | Pages by hour |
-| `html/options.html` + `js/options.js` | Options page (ID regex) |
-| `js/background.js` | Service worker — opens `index.html` on icon click |
+| `src/html/index.html` + `src/js/gsc-hourly.js` | Property by hour (main view) |
+| `src/html/days.html` + `src/js/gsc-daily.js` | Property by day, events |
+| `src/html/hourly.html` + `src/js/gsc-hourly2.js` | Pages by hour |
+| `src/html/options.html` + `src/js/options.js` | Options page (ID regex, Search Status import) |
+| `src/js/common.js` | Shared by all views: auth, API access, URL state, formatting, CSV/Sheets export, tabs |
+| `src/js/theme.js` | Sets the Bootstrap colour theme from `prefers-color-scheme` before first paint |
+| `src/js/background.js` | Service worker — opens `index.html` on icon click |
 
 State is managed via a top-level `settings` object in each JS file, initialized from URL search params. Mutations go back through `addFilter()` / `removeFilter()` which call `history.pushState`.
 
@@ -143,10 +157,11 @@ State is managed via a top-level `settings` object in each JS file, initialized 
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| [Bootstrap](https://getbootstrap.com/) | 5.3 | Layout and UI components |
-| [Bootstrap Icons](https://icons.getbootstrap.com/) | 1.13.1 | Icon set |
-| [jQuery](https://jquery.com/) | 3.7.1 | DOM manipulation |
-| [Bootstrap Table](https://bootstrap-table.com/) | 1.24.1 | Sortable, paginated, exportable data tables |
-| [Billboard.js](https://naver.github.io/billboard.js/) | — | Interactive line charts (D3-based) |
-| [D3.js](https://d3js.org/) | 7.8.5 | Chart rendering (Billboard.js dependency) |
-| [tableExport](https://github.com/kayalshri/tableExport.jquery.plugin) | 1.33.0 | CSV export |
+| [Bootstrap](https://getbootstrap.com/) | 5.3 | Layout, UI components, light/dark colour modes |
+| [Bootstrap Icons](https://icons.getbootstrap.com/) | 1.13 | Icon set |
+| [jQuery](https://jquery.com/) | 4.0 | DOM manipulation (required by Bootstrap Table) |
+| [Bootstrap Table](https://bootstrap-table.com/) | 1.28 | Sortable, searchable, paginated tables |
+| [Billboard.js](https://naver.github.io/billboard.js/) | 4.1 | Interactive line charts (pulls in the D3 modules it needs) |
+| [Vite](https://vitejs.dev/) | 8 | Build (dev dependency) |
+
+CSV and Google Sheets export are implemented in `src/js/common.js`; there is no export library.
